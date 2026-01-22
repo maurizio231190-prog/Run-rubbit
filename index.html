@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <title>Cascata POP - Prototype</title>
+  <title>Cascata POP - Debug Background Fix</title>
   <style>
     html, body { margin:0; padding:0; height:100%; overflow:hidden; background:#000; touch-action:none; }
     canvas { display:block; width:100vw; height:100vh; }
@@ -13,14 +13,34 @@
 <canvas id="c"></canvas>
 
 <script>
-const BG_CANDIDATES = [
-  "bg.png", "BG.png", "bg.PNG",
-  "bg.jpg", "bg.jpeg",
-  "background.png", "sfondo.png"
-];
+/**
+ * Perché vedevi nero:
+ * - l'immagine NON viene caricata (nome/percorso/commit/pages)
+ * Questo file:
+ * - prova vari percorsi corretti (anche con base path GitHub Pages)
+ * - se fallisce, mostra a schermo gli URL provati e l'errore (404 ecc.)
+ */
 
+// ========= CANVAS =========
+const canvas = document.getElementById("c");
+const ctx = canvas.getContext("2d");
+
+function resize() {
+  const dpr = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
+  canvas.width  = Math.floor(innerWidth * dpr);
+  canvas.height = Math.floor(innerHeight * dpr);
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+}
+addEventListener("resize", resize);
+resize();
+
+// ========= UTILS =========
+const clamp = (v,a,b)=>Math.max(a,Math.min(b,v));
+const lerp = (a,b,t)=>a+(b-a)*t;
+const easeIn = (t)=>t*t;
+
+// ========= GAME CONFIG (minimo) =========
 const LANES = 5;
-
 const cfg = {
   topY: 0.20,
   bottomY: 0.90,
@@ -38,22 +58,6 @@ const cfg = {
   hitWindow: 0.055
 };
 
-const canvas = document.getElementById("c");
-const ctx = canvas.getContext("2d");
-
-function resize() {
-  const dpr = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
-  canvas.width  = Math.floor(innerWidth * dpr);
-  canvas.height = Math.floor(innerHeight * dpr);
-  ctx.setTransform(dpr,0,0,dpr,0,0);
-}
-addEventListener("resize", resize);
-resize();
-
-const clamp = (v,a,b)=>Math.max(a,Math.min(b,v));
-const lerp = (a,b,t)=>a+(b-a)*t;
-const easeIn = (t)=>t*t;
-
 function laneX(laneIndex, tNorm, w) {
   const r = (LANES===1) ? 0.5 : laneIndex/(LANES-1);
   const topCenter = 0.5;
@@ -64,16 +68,13 @@ function laneX(laneIndex, tNorm, w) {
   const xBot = lerp(cfg.bottomLeft*w, cfg.bottomRight*w, r);
   return lerp(xTop, xBot, tNorm);
 }
-
 function yFromT(tNorm, h) {
   const t = easeIn(clamp(tNorm, 0, 1));
   return lerp(cfg.topY*h, cfg.bottomY*h, t);
 }
-
 function scaleFromT(tNorm) {
   return lerp(0.35, 1.05, clamp(tNorm,0,1));
 }
-
 function nearestLaneAtBottom(x, w) {
   let best = 0, bestD = Infinity;
   for (let i=0;i<LANES;i++) {
@@ -84,37 +85,75 @@ function nearestLaneAtBottom(x, w) {
   return best;
 }
 
-// ===== BACKGROUND LOADER (ANTI-NERO) =====
+// ========= BACKGROUND (FIX ROBUSTO) =========
+// Base dir corretto anche su GitHub Pages (con /nomeRepo/ dentro)
+const BASE_DIR = new URL(".", window.location.href).href;
+
+// Percorsi "probabili" (relativi alla cartella dell'index.html)
+const BG_CANDIDATES = [
+  "bg.png",
+  "bg.jpg",
+  "bg.jpeg",
+  "assets/bg.png",
+  "assets/bg.jpg",
+  "img/bg.png",
+  "img/bg.jpg",
+];
+
 const bgImg = new Image();
-bgImg.crossOrigin = "anonymous";
-
 let bgReady = false;
+
+let bgChosenUrl = "";
 let bgLoading = true;
-let bgChosen = "";
-let bgTried = [];
-let bgFailed = false;
+let bgErrors = []; // {url, status?, error?}
+let bgObjectUrl = ""; // per blob URL, se usiamo fetch
 
-function tryLoadBg(i=0) {
-  if (i >= BG_CANDIDATES.length) {
-    bgLoading = false;
-    bgFailed = true;
-    return;
+async function tryFetchAsImage(url) {
+  // Usiamo fetch così sappiamo: 404? 403? ecc.
+  // NOTA: se apri in file://, fetch può fallire -> te lo scrive a schermo.
+  try {
+    const res = await fetch(url, { cache: "no-store" });
+    if (!res.ok) {
+      return { ok:false, status: res.status };
+    }
+    const blob = await res.blob();
+    const objUrl = URL.createObjectURL(blob);
+
+    await new Promise((resolve, reject) => {
+      bgImg.onload = resolve;
+      bgImg.onerror = reject;
+      bgImg.src = objUrl;
+    });
+
+    bgObjectUrl = objUrl;
+    return { ok:true };
+  } catch (e) {
+    return { ok:false, error: String(e) };
   }
-  const src = BG_CANDIDATES[i];
-  bgTried.push(src);
-
-  bgImg.onload = () => {
-    bgChosen = src;
-    bgReady = true;
-    bgLoading = false;
-  };
-  bgImg.onerror = () => tryLoadBg(i+1);
-
-  bgImg.src = src + "?v=" + Date.now(); // cache-buster
 }
-tryLoadBg();
 
-// ===== GAME STATE =====
+async function loadBackground() {
+  bgLoading = true;
+  bgReady = false;
+  bgErrors = [];
+
+  for (const rel of BG_CANDIDATES) {
+    const abs = new URL(rel, BASE_DIR).href;
+    const r = await tryFetchAsImage(abs);
+    if (r.ok) {
+      bgChosenUrl = abs;
+      bgReady = true;
+      bgLoading = false;
+      return;
+    }
+    bgErrors.push({ url: abs, ...r });
+  }
+
+  bgLoading = false;
+}
+loadBackground();
+
+// ========= GAME STATE (minimo) =========
 let started = false;
 let lastTs = 0;
 let elapsed = 0;
@@ -123,7 +162,7 @@ const state = {
   score: 0,
   lives: cfg.lives,
   playerLane: 2,
-  playerSkin: "bunny", // "boy" | "girl" | "bunny"
+  playerSkin: "bunny",
   obstacles: [],
   nextSpawn: 0
 };
@@ -138,15 +177,14 @@ function resetGame() {
   state.nextSpawn = 0;
 }
 
+// ========= DRAW (semplice) =========
 function drawKawaiiFace(x, y, r) {
   ctx.fillStyle = "rgba(0,0,0,0.85)";
   ctx.beginPath(); ctx.arc(x - r*0.35, y - r*0.10, r*0.10, 0, Math.PI*2); ctx.fill();
   ctx.beginPath(); ctx.arc(x + r*0.35, y - r*0.10, r*0.10, 0, Math.PI*2); ctx.fill();
-
   ctx.fillStyle = "rgba(255,255,255,0.9)";
   ctx.beginPath(); ctx.arc(x - r*0.32, y - r*0.14, r*0.04, 0, Math.PI*2); ctx.fill();
   ctx.beginPath(); ctx.arc(x + r*0.38, y - r*0.14, r*0.04, 0, Math.PI*2); ctx.fill();
-
   ctx.strokeStyle = "rgba(0,0,0,0.75)";
   ctx.lineWidth = Math.max(1, r*0.06);
   ctx.beginPath();
@@ -162,7 +200,6 @@ function drawPlayer(x, y, s, skin) {
   if (skin === "boy" || skin === "girl") {
     ctx.fillStyle = "rgba(255,240,220,0.95)";
     ctx.beginPath(); ctx.arc(0, 0, r, 0, Math.PI*2); ctx.fill();
-
     ctx.fillStyle = (skin==="girl") ? "rgba(230,200,80,0.95)" : "rgba(120,70,30,0.95)";
     ctx.beginPath(); ctx.arc(0, -r*0.2, r*1.05, Math.PI, 0); ctx.fill();
 
@@ -195,16 +232,6 @@ function drawPlayer(x, y, s, skin) {
   ctx.restore();
 }
 
-function drawGood(x, y, s) {
-  const r = 22 * s;
-  ctx.fillStyle = "rgba(255,255,255,0.92)";
-  ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI*2); ctx.fill();
-  ctx.fillStyle = "rgba(255,120,170,0.55)";
-  ctx.beginPath(); ctx.arc(x - r*0.5, y + r*0.15, r*0.22, 0, Math.PI*2); ctx.fill();
-  ctx.beginPath(); ctx.arc(x + r*0.5, y + r*0.15, r*0.22, 0, Math.PI*2); ctx.fill();
-  drawKawaiiFace(x, y, r);
-}
-
 function roundRect(x, y, w, h, r) {
   r = Math.min(r, w/2, h/2);
   ctx.beginPath();
@@ -216,11 +243,22 @@ function roundRect(x, y, w, h, r) {
   ctx.closePath();
 }
 
+function drawGood(x, y, s) {
+  const r = 22 * s;
+  ctx.fillStyle = "rgba(255,255,255,0.92)";
+  ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI*2); ctx.fill();
+  ctx.fillStyle = "rgba(255,120,170,0.55)";
+  ctx.beginPath(); ctx.arc(x - r*0.5, y + r*0.15, r*0.22, 0, Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.arc(x + r*0.5, y + r*0.15, r*0.22, 0, Math.PI*2); ctx.fill();
+  drawKawaiiFace(x, y, r);
+}
+
 function drawBad(x, y, s) {
   const size = 44 * s;
-  const r = 10 * s;
+  const rr = 10 * s;
+
   ctx.fillStyle = "rgba(255,200,70,0.95)";
-  roundRect(x - size/2, y - size/2, size, size, r);
+  roundRect(x - size/2, y - size/2, size, size, rr);
   ctx.fill();
 
   ctx.fillStyle = "rgba(20,20,20,0.85)";
@@ -256,6 +294,7 @@ function drawBad(x, y, s) {
   ctx.fill();
 }
 
+// ========= SPAWN/UPDATE =========
 function spawnObstacle() {
   const lane = Math.floor(Math.random() * LANES);
   const isGood = Math.random() < cfg.goodChance;
@@ -293,6 +332,7 @@ function update(dt) {
   state.obstacles = state.obstacles.filter(o => o.t < 1.15 && !o.taken);
 }
 
+// ========= RENDER =========
 function drawBgCover() {
   const w = innerWidth, h = innerHeight;
 
@@ -306,26 +346,32 @@ function drawBgCover() {
     return;
   }
 
-  // Schermo informativo (così NON è mai “tutto nero” senza spiegazione)
-  ctx.fillStyle = "#0b0010";
+  // Non lasciamo "nero muto": scriviamo il motivo
+  ctx.fillStyle = "#000";
   ctx.fillRect(0,0,w,h);
 
   ctx.fillStyle = "rgba(255,255,255,0.92)";
-  ctx.font = "18px system-ui, -apple-system, Segoe UI, Roboto";
-  ctx.fillText(bgLoading ? "Carico lo sfondo..." : "Sfondo NON trovato.", 16, 34);
+  ctx.font = "16px system-ui, -apple-system, Segoe UI, Roboto";
+  ctx.fillText(bgLoading ? "Caricamento sfondo..." : "Sfondo NON caricato.", 14, 28);
 
-  ctx.font = "14px system-ui, -apple-system, Segoe UI, Roboto";
-  ctx.fillText("Metti bg.png nella stessa cartella di index.html (nome identico).", 16, 58);
+  ctx.font = "13px system-ui, -apple-system, Segoe UI, Roboto";
+  ctx.fillStyle = "rgba(255,255,255,0.85)";
+  ctx.fillText("URL pagina: " + window.location.href, 14, 50);
+  ctx.fillText("Cartella base: " + BASE_DIR, 14, 68);
 
-  if (bgFailed) {
+  if (!bgLoading) {
     ctx.fillStyle = "rgba(255,120,120,0.95)";
-    ctx.fillText("Ho provato questi nomi:", 16, 86);
-    ctx.fillStyle = "rgba(255,255,255,0.85)";
-    let y = 108;
-    for (const t of bgTried) {
-      ctx.fillText("• " + t, 16, y);
-      y += 18;
-      if (y > h - 30) break;
+    ctx.fillText("Cause tipiche: bg.png NON esiste / nome sbagliato / file non committato / Pages da cartella diversa.", 14, 90);
+
+    ctx.fillStyle = "rgba(255,255,255,0.88)";
+    let y = 114;
+    ctx.fillText("Ho provato questi URL:", 14, y); y += 18;
+
+    for (const e of bgErrors.slice(0, 10)) {
+      const msg = e.status ? `status ${e.status}` : (e.error ? e.error : "errore");
+      ctx.fillText("• " + e.url + "  →  " + msg, 14, y);
+      y += 16;
+      if (y > h - 24) break;
     }
   }
 }
@@ -334,7 +380,7 @@ function drawHud() {
   ctx.save();
   ctx.globalAlpha = 0.75;
   ctx.fillStyle = "rgba(0,0,0,0.35)";
-  ctx.fillRect(10, 10, 180, 58);
+  ctx.fillRect(10, 10, 210, 58);
   ctx.globalAlpha = 1;
   ctx.fillStyle = "white";
   ctx.font = "16px system-ui, -apple-system, Segoe UI, Roboto";
@@ -368,15 +414,14 @@ function render() {
     ctx.fillStyle = "rgba(0,0,0,0.45)";
     ctx.fillRect(0,0,w,h);
     ctx.fillStyle = "white";
-    ctx.font = "22px system-ui, -apple-system, Segoe UI, Roboto";
+    ctx.font = "20px system-ui, -apple-system, Segoe UI, Roboto";
     ctx.textAlign = "center";
-    ctx.fillText(state.lives<=0 ? "GAME OVER - Tocca per ricominciare" : "TOCCA PER INIZIARE", w/2, h*0.45);
-    ctx.font = "14px system-ui, -apple-system, Segoe UI, Roboto";
-    ctx.fillText("Trascina per cambiare corsia • Tasti 1/2/3 per skin", w/2, h*0.45 + 28);
+    ctx.fillText("TOCCA PER INIZIARE (1/2/3 cambia personaggio)", w/2, h*0.45);
     ctx.restore();
   }
 }
 
+// ========= LOOP =========
 function loop(ts) {
   if (!lastTs) lastTs = ts;
   const dt = Math.min(0.033, (ts - lastTs)/1000);
@@ -388,6 +433,7 @@ function loop(ts) {
 }
 requestAnimationFrame(loop);
 
+// ========= INPUT =========
 let pointerDown = false;
 
 function startOrRestart() {
@@ -401,12 +447,10 @@ canvas.addEventListener("pointerdown", (e) => {
   if (!started) startOrRestart();
   state.playerLane = nearestLaneAtBottom(e.clientX, innerWidth);
 });
-
 canvas.addEventListener("pointermove", (e) => {
   if (!pointerDown || !started) return;
   state.playerLane = nearestLaneAtBottom(e.clientX, innerWidth);
 });
-
 canvas.addEventListener("pointerup", () => pointerDown = false);
 canvas.addEventListener("pointercancel", () => pointerDown = false);
 
@@ -416,7 +460,6 @@ addEventListener("keydown", (e) => {
   if (e.key === "1") state.playerSkin = "boy";
   if (e.key === "2") state.playerSkin = "girl";
   if (e.key === "3") state.playerSkin = "bunny";
-  if (e.key.toLowerCase() === "r") { resetGame(); started = false; }
 });
 </script>
 </body>
