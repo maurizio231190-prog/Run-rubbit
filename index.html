@@ -6,11 +6,13 @@
   <title>Coniglio & Fiamme</title>
   <style>
     html, body { margin:0; padding:0; height:100%; background:#0b0b10; overflow:hidden; }
-    canvas { display:block; width:100vw; height:100vh; touch-action:none; }
+    /* 100dvh evita i micro-resize “gelatina” su Android */
+    canvas { display:block; width:100dvw; height:100dvh; touch-action:none; }
   </style>
 </head>
 <body>
 <canvas id="c"></canvas>
+
 <script>
 (() => {
   // =========================
@@ -20,9 +22,12 @@
   const ctx = canvas.getContext('2d', { alpha: false });
 
   const DPR = Math.min(2, window.devicePixelRatio || 1);
+
   function resize() {
-    canvas.width = Math.floor(innerWidth * DPR);
-    canvas.height = Math.floor(innerHeight * DPR);
+    const vw = document.documentElement.clientWidth;
+    const vh = document.documentElement.clientHeight;
+    canvas.width  = Math.floor(vw * DPR);
+    canvas.height = Math.floor(vh * DPR);
   }
   addEventListener('resize', resize);
   resize();
@@ -31,9 +36,8 @@
   // Helpers
   // =========================
   const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
-  const lerp = (a, b, t) => a + (b - a) * t;
-  const rand = (a, b) => a + Math.random() * (b - a);
-  const randi = (a, b) => Math.floor(rand(a, b + 1));
+  const lerp  = (a, b, t) => a + (b - a) * t;
+  const rand  = (a, b) => a + Math.random() * (b - a);
 
   function dist2(ax, ay, bx, by) {
     const dx = ax - bx, dy = ay - by;
@@ -48,7 +52,7 @@
       this.ctx = null;
       this.master = null;
       this.enabled = true;
-      this.cool = new Map(); // key -> time
+      this.cool = new Map();
     }
     ensure() {
       if (this.ctx) return;
@@ -87,24 +91,23 @@
     }
     pop() {
       if (!this.can('pop', 45)) return;
-      // piccolo "pop" buffo
       this.tone({freq: rand(250, 360), dur: 0.06, type:'triangle', gain: 0.06, slideTo: rand(140, 220)});
       this.tone({freq: rand(900, 1200), dur: 0.04, type:'sine', gain: 0.03, detune: rand(-8, 8)});
     }
     starNote(step=0) {
       if (!this.can('star', 35)) return;
-      // scala felice, con micro-variazioni
-      const scale = [0,2,4,7,9,12,14,16]; // maggiore-ish
-      const base = 440 * Math.pow(2, -1); // A3
+      const scale = [0,2,4,7,9,12,14,16];
+      const base = 440 * Math.pow(2, -1);
       const semi = scale[step % scale.length] + (Math.random() < 0.08 ? 12 : 0);
       const f = base * Math.pow(2, semi/12);
       this.tone({freq: f * rand(0.98, 1.02), dur: 0.09, type:'sine', gain: 0.07});
       this.tone({freq: f*2 * rand(0.99, 1.01), dur: 0.06, type:'triangle', gain: 0.035, detune: rand(-5,5)});
     }
     jingle(kind='c3') {
-      // mini-melodie: 3/5/10 combo
       const key = 'jing'+kind;
       if (!this.can(key, 120)) return;
+      this.ensure();
+      if (!this.ctx) return;
       const t0 = this.now();
       const mk = (f, dt, dur, g, type='sine') => {
         const o = this.ctx.createOscillator();
@@ -131,7 +134,8 @@
     }
     teacher() {
       if (!this.can('teacher', 140)) return;
-      // megafono/wa-wa comico (non aggressivo)
+      this.ensure();
+      if (!this.ctx) return;
       const t0 = this.now();
       const o = this.ctx.createOscillator();
       const lfo = this.ctx.createOscillator();
@@ -155,28 +159,19 @@
     }
     grandpa() {
       if (!this.can('grandpa', 140)) return;
-      // brontolio buffo
       this.tone({freq: rand(70, 95), dur: 0.22, type:'sawtooth', gain: 0.06, slideTo: rand(55, 75)});
       this.tone({freq: rand(120, 150), dur: 0.14, type:'triangle', gain: 0.03, detune: rand(-12,12)});
     }
     animal() {
       if (!this.can('animal', 90)) return;
-      // chirp dolce / miao sintetico
       this.tone({freq: rand(520, 740), dur: 0.10, type:'sine', gain: 0.06, slideTo: rand(900, 1200)});
       if (Math.random() < 0.35) this.tone({freq: rand(260, 380), dur: 0.09, type:'triangle', gain: 0.03, slideTo: rand(220, 300)});
     }
     pizza() {
       if (!this.can('pizza', 180)) return;
-      // ta-daa + crunch soft
       this.tone({freq: 440, dur: 0.10, type:'triangle', gain: 0.07, slideTo: 660});
       this.tone({freq: 660, dur: 0.10, type:'sine', gain: 0.06, slideTo: 880});
       if (Math.random() < 0.6) this.tone({freq: rand(110, 160), dur: 0.09, type:'square', gain: 0.03, detune: rand(-7,7)});
-    }
-    flameNear(intensity=0.0) {
-      // tensione leggera: poco frequente
-      if (intensity < 0.65) return;
-      if (!this.can('flame', 160)) return;
-      this.tone({freq: rand(140, 190), dur: 0.16, type:'sine', gain: 0.025, slideTo: rand(190, 240)});
     }
   }
 
@@ -189,33 +184,18 @@
     bgTop: '#0b0b10',
     bgBot: '#10101a',
     ink: 'rgba(0,0,0,0.85)',
-    white: '#f4f5ff',
     star: '#ffe37a',
-    star2: '#fff3b8',
     bunny: '#f2f2f7',
     bunny2: '#d9d9e6',
     flame1: '#ff6a3a',
     flame2: '#ffd36a',
     bubble: 'rgba(250,250,255,0.92)',
-    bubble2: 'rgba(240,240,255,0.90)',
     teacher: '#ff7aa6',
     grandpa: '#9de0ff',
     animal: '#a8ffb6',
     pizza: '#ffcf6e'
   };
 
-  function roundRectPath(ctx, x, y, w, h, r) {
-    r = Math.min(r, w/2, h/2);
-    ctx.beginPath();
-    ctx.moveTo(x + r, y);
-    ctx.arcTo(x + w, y, x + w, y + h, r);
-    ctx.arcTo(x + w, y + h, x, y + h, r);
-    ctx.arcTo(x, y + h, x, y, r);
-    ctx.arcTo(x, y, x + w, y, r);
-    ctx.closePath();
-  }
-
-  // Bubble types: 'oval', 'cloud', 'spiky'
   function drawBubble(ctx, x, y, r, type='oval') {
     ctx.save();
     const lw = Math.max(2, r * 0.12);
@@ -229,7 +209,6 @@
       ctx.fill();
       ctx.stroke();
     } else if (type === 'cloud') {
-      // nuvoletta: 5 cerchi
       const rr = r*0.55;
       ctx.beginPath();
       ctx.ellipse(x - r*0.55, y, rr, rr, 0, 0, Math.PI*2);
@@ -257,7 +236,6 @@
       ctx.stroke();
     }
 
-    // micro highlight
     ctx.globalAlpha = 0.14;
     ctx.fillStyle = '#fff';
     ctx.beginPath();
@@ -272,7 +250,6 @@
     ctx.fillStyle = PAL.ink;
     ctx.beginPath(); ctx.ellipse(x - s*0.45, y, s*0.15, s*0.22, 0, 0, Math.PI*2); ctx.fill();
     ctx.beginPath(); ctx.ellipse(x + s*0.45, y, s*0.15, s*0.22, 0, 0, Math.PI*2); ctx.fill();
-    // sparkle
     ctx.fillStyle = 'rgba(255,255,255,0.85)';
     ctx.beginPath(); ctx.ellipse(x - s*0.52, y - s*0.06, s*0.06, s*0.06, 0, 0, Math.PI*2); ctx.fill();
     ctx.beginPath(); ctx.ellipse(x + s*0.38, y - s*0.06, s*0.05, s*0.05, 0, 0, Math.PI*2); ctx.fill();
@@ -286,7 +263,6 @@
     ctx.strokeStyle = PAL.ink;
     ctx.lineWidth = Math.max(2, r*0.12);
 
-    // stella cicciotta
     ctx.beginPath();
     const points = 5;
     const outer = s*0.72;
@@ -302,7 +278,6 @@
     ctx.fill();
     ctx.stroke();
 
-    // faccina
     drawKawaiiEyes(ctx, x, y + s*0.06, s*0.60);
     ctx.strokeStyle = PAL.ink;
     ctx.lineWidth = Math.max(2, r*0.10);
@@ -320,7 +295,6 @@
     ctx.strokeStyle = PAL.ink;
     ctx.lineWidth = Math.max(2, r*0.12);
 
-    // fetta triangolo
     ctx.beginPath();
     ctx.moveTo(x, y - s*0.70);
     ctx.lineTo(x - s*0.55, y + s*0.55);
@@ -328,7 +302,6 @@
     ctx.closePath();
     ctx.fill(); ctx.stroke();
 
-    // crosta
     ctx.fillStyle = '#ffb85c';
     ctx.beginPath();
     ctx.moveTo(x, y - s*0.70);
@@ -338,13 +311,9 @@
     ctx.closePath();
     ctx.fill(); ctx.stroke();
 
-    // salamini
     ctx.fillStyle = '#ff6a6a';
     ctx.beginPath(); ctx.ellipse(x - s*0.18, y + s*0.05, s*0.14, s*0.14, 0, 0, Math.PI*2); ctx.fill();
     ctx.beginPath(); ctx.ellipse(x + s*0.18, y + s*0.15, s*0.14, s*0.14, 0, 0, Math.PI*2); ctx.fill();
-    ctx.strokeStyle = 'rgba(0,0,0,0.45)';
-    ctx.lineWidth = Math.max(1, r*0.06);
-    ctx.stroke();
 
     ctx.restore();
   }
@@ -357,12 +326,10 @@
     ctx.fillStyle = PAL.animal;
     ctx.strokeStyle = PAL.ink;
 
-    // testa tonda
     ctx.beginPath();
     ctx.ellipse(x, y, s*0.70, s*0.62, 0, 0, Math.PI*2);
     ctx.fill(); ctx.stroke();
 
-    // orecchie
     ctx.beginPath();
     ctx.ellipse(x - s*0.45, y - s*0.50, s*0.20, s*0.28, -0.25, 0, Math.PI*2);
     ctx.ellipse(x + s*0.45, y - s*0.50, s*0.20, s*0.28, 0.25, 0, Math.PI*2);
@@ -370,7 +337,6 @@
 
     drawKawaiiEyes(ctx, x, y - s*0.05, s*0.70);
 
-    // nasino
     ctx.fillStyle = PAL.ink;
     ctx.beginPath();
     ctx.ellipse(x, y + s*0.18, s*0.10, s*0.08, 0, 0, Math.PI*2);
@@ -386,19 +352,16 @@
     ctx.lineWidth = lw;
     ctx.strokeStyle = PAL.ink;
 
-    // testa
     ctx.fillStyle = '#ffd7e5';
     ctx.beginPath();
     ctx.ellipse(x, y, s*0.70, s*0.66, 0, 0, Math.PI*2);
     ctx.fill(); ctx.stroke();
 
-    // chignon
     ctx.fillStyle = PAL.teacher;
     ctx.beginPath();
     ctx.ellipse(x + s*0.60, y - s*0.55, s*0.20, s*0.20, 0, 0, Math.PI*2);
     ctx.fill(); ctx.stroke();
 
-    // occhiali
     ctx.save();
     ctx.lineWidth = Math.max(1.5, lw*0.75);
     ctx.strokeStyle = PAL.ink;
@@ -410,33 +373,14 @@
     ctx.stroke();
     ctx.restore();
 
-    // occhi
     ctx.fillStyle = PAL.ink;
     ctx.beginPath(); ctx.ellipse(x - s*0.28, y - s*0.05, s*0.07, s*0.11, 0, 0, Math.PI*2); ctx.fill();
     ctx.beginPath(); ctx.ellipse(x + s*0.28, y - s*0.05, s*0.07, s*0.11, 0, 0, Math.PI*2); ctx.fill();
 
-    // bocca "O" urlo
     ctx.fillStyle = '#ff4b4b';
     ctx.beginPath();
     ctx.ellipse(x, y + s*0.30, s*0.18, s*0.22, 0, 0, Math.PI*2);
     ctx.fill();
-    ctx.strokeStyle = 'rgba(0,0,0,0.55)';
-    ctx.lineWidth = Math.max(1.5, lw*0.6);
-    ctx.stroke();
-
-    // onde sonore (archi)
-    ctx.save();
-    ctx.strokeStyle = PAL.ink;
-    ctx.lineWidth = Math.max(2, lw*0.65);
-    const ox = x + s*0.80;
-    const oy = y + s*0.10;
-    for (let i=0;i<3;i++) {
-      const rr = s*(0.18 + i*0.14);
-      ctx.beginPath();
-      ctx.arc(ox, oy, rr, -0.6, 0.6);
-      ctx.stroke();
-    }
-    ctx.restore();
 
     ctx.restore();
   }
@@ -448,69 +392,45 @@
     ctx.lineWidth = lw;
     ctx.strokeStyle = PAL.ink;
 
-    // testa
     ctx.fillStyle = '#d6f3ff';
     ctx.beginPath();
     ctx.ellipse(x, y, s*0.72, s*0.66, 0, 0, Math.PI*2);
     ctx.fill(); ctx.stroke();
 
-    // sopracciglia a V
-    ctx.save();
-    ctx.strokeStyle = PAL.ink;
-    ctx.lineWidth = Math.max(2, lw*0.70);
-    ctx.beginPath();
-    ctx.moveTo(x - s*0.55, y - s*0.20);
-    ctx.lineTo(x - s*0.18, y - s*0.35);
-    ctx.moveTo(x + s*0.55, y - s*0.20);
-    ctx.lineTo(x + s*0.18, y - s*0.35);
-    ctx.stroke();
-    ctx.restore();
-
-    // occhi
     ctx.fillStyle = PAL.ink;
     ctx.beginPath(); ctx.ellipse(x - s*0.25, y - s*0.05, s*0.08, s*0.10, 0, 0, Math.PI*2); ctx.fill();
     ctx.beginPath(); ctx.ellipse(x + s*0.25, y - s*0.05, s*0.08, s*0.10, 0, 0, Math.PI*2); ctx.fill();
 
-    // baffo (due archi)
-    ctx.save();
-    ctx.strokeStyle = PAL.ink;
-    ctx.lineWidth = Math.max(2, lw*0.75);
-    ctx.beginPath();
-    ctx.arc(x - s*0.15, y + s*0.20, s*0.22, 0.1, Math.PI - 0.1);
-    ctx.arc(x + s*0.15, y + s*0.20, s*0.22, 0.1, Math.PI - 0.1);
-    ctx.stroke();
-    ctx.restore();
-
-    // bocca arrabbiata
-    ctx.save();
-    ctx.strokeStyle = PAL.ink;
-    ctx.lineWidth = Math.max(2, lw*0.6);
-    ctx.beginPath();
-    ctx.arc(x, y + s*0.40, s*0.18, Math.PI, Math.PI*2);
-    ctx.stroke();
-    ctx.restore();
-
     ctx.restore();
   }
 
-  function drawBunny(ctx, x, y, r, wiggle=0) {
+  // Coda che cresce (tail 0..100)
+  function drawBunny(ctx, x, y, r, wiggle=0, tail=0) {
     ctx.save();
     const lw = Math.max(2, r*0.10);
     ctx.lineWidth = lw;
     ctx.strokeStyle = PAL.ink;
 
-    // corpo
+    const t = clamp(tail, 0, 100);
+    const tailR = r * (0.26 + t * 0.006);
+    const tailX = x + r*0.95;
+    const tailY = y + r*0.35;
+
+    ctx.fillStyle = PAL.bunny2;
+    ctx.beginPath();
+    ctx.ellipse(tailX, tailY, tailR, tailR*0.92, 0, 0, Math.PI*2);
+    ctx.fill();
+    ctx.stroke();
+
     ctx.fillStyle = PAL.bunny;
     ctx.beginPath();
     ctx.ellipse(x, y + r*0.25, r*0.85, r*0.75, 0, 0, Math.PI*2);
     ctx.fill(); ctx.stroke();
 
-    // testa
     ctx.beginPath();
     ctx.ellipse(x, y - r*0.15, r*0.75, r*0.68, 0, 0, Math.PI*2);
     ctx.fill(); ctx.stroke();
 
-    // orecchie (wiggle)
     const a = wiggle * 0.35;
     ctx.fillStyle = PAL.bunny;
     ctx.beginPath();
@@ -518,16 +438,13 @@
     ctx.ellipse(x + r*0.35, y - r*0.92, r*0.22, r*0.70, 0.18 + a, 0, Math.PI*2);
     ctx.fill(); ctx.stroke();
 
-    // occhi kawaii
     drawKawaiiEyes(ctx, x, y - r*0.12, r*0.85);
 
-    // nasino
     ctx.fillStyle = PAL.ink;
     ctx.beginPath();
     ctx.ellipse(x, y + r*0.10, r*0.08, r*0.06, 0, 0, Math.PI*2);
     ctx.fill();
 
-    // sorriso
     ctx.save();
     ctx.strokeStyle = PAL.ink;
     ctx.lineWidth = Math.max(2, lw*0.55);
@@ -539,12 +456,23 @@
     ctx.restore();
   }
 
-  function drawFlames(ctx, yFromBottom, t, w, h) {
-    // onda fiamme minimal (non realistiche)
+  // =========================
+  // Fuoco dietro: statico (forma fissa) + flicker (luminosità)
+  // =========================
+  const FLAME_WAVES = Array.from({length: 6}, (_, i) =>
+    Math.sin(i*1.7) * 0.6 + Math.cos(i*0.9) * 0.4
+  );
+
+  function drawFlamesStatic(ctx, t, w, h) {
+    const yFromBottom = Math.floor(h * 0.38); // sempre uguale
     const baseY = h - yFromBottom;
     const amp = Math.max(10*DPR, Math.min(44*DPR, yFromBottom * 0.12));
+
+    const flick = 0.90 + 0.10 * Math.sin(t * 10.0);
+
     ctx.save();
-    // gradiente caldo
+    ctx.globalAlpha = flick;
+
     const grad = ctx.createLinearGradient(0, baseY-amp*2, 0, h);
     grad.addColorStop(0, PAL.flame2);
     grad.addColorStop(0.55, PAL.flame1);
@@ -558,21 +486,21 @@
     const waves = 5;
     for (let i=0;i<=waves;i++) {
       const x = (i/waves) * w;
-      const s = Math.sin(t*1.4 + i*0.8) + Math.sin(t*2.1 + i*1.3)*0.5;
+      const s = FLAME_WAVES[i] ?? 0;
       const y = baseY - amp*(0.65 + 0.35*s);
-      ctx.quadraticCurveTo(x - w/(waves*2), y, x, yFromBottom > 0 ? y : baseY);
+      ctx.quadraticCurveTo(x - w/(waves*2), y, x, y);
     }
     ctx.lineTo(w, h);
     ctx.closePath();
     ctx.fill();
 
-    // bordo inchiostro sopra la fiamma
+    ctx.globalAlpha = 0.70;
     ctx.strokeStyle = 'rgba(0,0,0,0.55)';
     ctx.lineWidth = Math.max(2, 3*DPR);
     ctx.beginPath();
     for (let i=0;i<=waves;i++) {
       const x = (i/waves) * w;
-      const s = Math.sin(t*1.4 + i*0.8) + Math.sin(t*2.1 + i*1.3)*0.5;
+      const s = FLAME_WAVES[i] ?? 0;
       const y = baseY - amp*(0.65 + 0.35*s);
       if (i===0) ctx.moveTo(x, y);
       else ctx.quadraticCurveTo(x - w/(waves*2), y, x, y);
@@ -585,188 +513,205 @@
   // =========================
   // Game State
   // =========================
-  const STATE = {
-    IDLE: 'idle',
-    PLAY: 'play',
-    OVER: 'over'
-  };
+  const STATE = { IDLE:'idle', PLAY:'play', OVER:'over' };
 
   const game = {
     state: STATE.IDLE,
     t: 0,
-    dt: 0,
     last: performance.now(),
     shake: 0,
     shakeX: 0,
     shakeY: 0,
 
-    // Bunny
     bunny: {
-      x: 0,
-      y: 0,
+      x: canvas.width * 0.5,
+      y: canvas.height * 0.78,
       r: 24*DPR,
-      vx: 0,
-      targetX: 0,
+      targetX: canvas.width * 0.5,
       wiggle: 0
     },
 
-    // “vita” invisibile: 3 stelline vicino al coniglio
     lives: 3,
-
-    // Combo & “musica”
+    score: 0,
     combo: 0,
     noteStep: 0,
 
-    // Flames
-    flames: 0,           // altezza fiamme (px)
-    flamesSpeed: 28*DPR, // base speed
-    flamesBoost: 0,      // extra temporaneo
+    tail: 20, // 0..100
 
-    // Powerups
-    slowUntil: 0,        // rallenta fiamme
-    starRainUntil: 0,    // pioggia stelle
-
-    // Spawner
     items: [],
-    spawnTimer: 0,
-    difficulty: 0
+    spawnTimer: 0.2,
+    difficulty: 0,
+
+    // scelte
+    choiceTimer: 2.8,
+    choiceId: 0
   };
 
   function resetToIdle() {
     game.state = STATE.IDLE;
+    game.t = 0;
     game.items.length = 0;
     game.lives = 3;
+    game.score = 0;
     game.combo = 0;
     game.noteStep = 0;
-    game.flames = 0;
-    game.flamesBoost = 0;
-    game.slowUntil = 0;
-    game.starRainUntil = 0;
-    game.spawnTimer = 0;
+    game.tail = 20;
+    game.spawnTimer = 0.2;
     game.difficulty = 0;
+    game.choiceTimer = 2.8;
   }
 
   function startGame() {
     game.state = STATE.PLAY;
+    game.t = 0;
     game.items.length = 0;
     game.lives = 3;
+    game.score = 0;
     game.combo = 0;
     game.noteStep = 0;
-    game.flames = 10*DPR;
-    game.flamesBoost = 0;
-    game.slowUntil = 0;
-    game.starRainUntil = 0;
-    game.spawnTimer = 0.2;
+    game.tail = 20;
+    game.spawnTimer = 0.25;
     game.difficulty = 0;
+    game.choiceTimer = 2.2;
   }
 
   function gameOver() {
     game.state = STATE.OVER;
     game.items.length = 0;
-    game.flamesBoost = 80*DPR;
-    game.shake = 0.35;
+    game.shake = 0.25;
   }
 
   // =========================
   // Items
   // =========================
-  // kind: 'star' | 'teacher' | 'grandpa' | 'animal' | 'pizza'
+  // kind: 'star' | 'teacher' | 'grandpa' | 'animal' | 'pizza' | 'carrot'(choice)
   function spawnItem(kind) {
-    const w = canvas.width, h = canvas.height;
+    const w = canvas.width;
     const margin = 70 * DPR;
     const r = rand(22, 30) * DPR;
     const x = rand(margin, w - margin);
     const y = -r * 2;
-    const speedBase = lerp(210, 340, clamp(game.difficulty, 0, 1)) * DPR;
+
+    const speedBase = lerp(230, 360, clamp(game.difficulty, 0, 1)) * DPR;
     const speed = speedBase * rand(0.85, 1.15);
 
-    // bubble type: buoni -> oval/cloud, cattivi -> spiky
     let bubble = 'oval';
-    if (kind === 'teacher') bubble = 'spiky';
-    else if (kind === 'grandpa') bubble = 'spiky';
+    if (kind === 'teacher' || kind === 'grandpa') bubble = 'spiky';
     else if (kind === 'animal') bubble = (Math.random()<0.5 ? 'cloud' : 'oval');
     else if (kind === 'pizza') bubble = 'cloud';
 
-    game.items.push({
-      kind, x, y, r, bubble,
-      speed,
-      pulse: 0,
-      wobble: rand(0, Math.PI*2)
-    });
+    game.items.push({ kind, x, y, r, bubble, speed, pulse: 0, wobble: rand(0, Math.PI*2) });
+    SND.pop();
+  }
+
+  function spawnChoicePair() {
+    const w = canvas.width;
+    const r = 34 * DPR;
+    const y = -r * 2;
+    const speed = (lerp(200, 270, clamp(game.difficulty,0,1)) * DPR);
+    const id = ++game.choiceId;
+
+    game.items.push({ kind:'pizza',  isChoice:true, group:id, x:w*0.30, y, r, bubble:'cloud', speed, pulse:0, wobble:0 });
+    game.items.push({ kind:'carrot', isChoice:true, group:id, x:w*0.70, y, r, bubble:'oval',  speed, pulse:0, wobble:0 });
 
     SND.pop();
   }
 
   function spawnLogic(dt) {
+    // non spammare: se c’è una scelta in corso, niente spawn random
+    const hasChoice = game.items.some(it => it.isChoice);
+    if (hasChoice) return;
+
     game.spawnTimer -= dt;
     if (game.spawnTimer > 0) return;
 
-    // Più avanti = più frequente
-    const base = lerp(0.60, 0.32, clamp(game.difficulty, 0, 1)); // secondi
+    const base = lerp(0.62, 0.34, clamp(game.difficulty, 0, 1));
     game.spawnTimer = base * rand(0.75, 1.25);
 
-    // Probabilità (stella frequente, bonus rari)
-    const pStar    = 0.55;
-    const pTeacher = 0.22;
-    const pGrandpa = 0.13;
-    const pAnimal  = 0.06;
-    const pPizza   = 0.04;
+    const roll = Math.random();
+    if (roll < 0.62) spawnItem('star');
+    else if (roll < 0.78) spawnItem('pizza');
+    else if (roll < 0.88) spawnItem('animal');
+    else if (roll < 0.94) spawnItem('teacher');
+    else spawnItem('grandpa');
+  }
 
-    const r = Math.random();
-    if (r < pStar) spawnItem('star');
-    else if (r < pStar + pTeacher) spawnItem('teacher');
-    else if (r < pStar + pTeacher + pGrandpa) spawnItem('grandpa');
-    else if (r < pStar + pTeacher + pGrandpa + pAnimal) spawnItem('animal');
-    else spawnItem('pizza');
+  // =========================
+  // Input (DPR-safe)
+  // =========================
+  function canvasXFromEvent(e) {
+    const rect = canvas.getBoundingClientRect();
+    return (e.clientX - rect.left) * DPR;
+  }
 
-    // Star rain: aggiungi più stelle durante il powerup
-    if (performance.now()/1000 < game.starRainUntil && Math.random() < 0.65) {
-      spawnItem('star');
-      if (Math.random() < 0.25) spawnItem('star');
+  let pointerDown = false;
+
+  canvas.addEventListener('pointerdown', (e) => {
+    pointerDown = true;
+    SND.ensure(); // unlock audio
+
+    if (game.state !== STATE.PLAY) startGame();
+
+    game.bunny.targetX = canvasXFromEvent(e);
+  });
+
+  canvas.addEventListener('pointermove', (e) => {
+    if (!pointerDown) return;
+    game.bunny.targetX = canvasXFromEvent(e);
+  });
+
+  addEventListener('pointerup', () => { pointerDown = false; });
+
+  // =========================
+  // Collision + Rules
+  // =========================
+  function collides(bx, by, br, ix, iy, ir) {
+    return dist2(bx, by, ix, iy) <= (br + ir) * (br + ir);
+  }
+
+  function applyChoice(kind) {
+    if (kind === 'pizza') {
+      game.tail = clamp(game.tail + 18, 0, 100);
+      game.score += 2;
+      SND.pizza();
+    } else if (kind === 'carrot') {
+      game.tail = clamp(game.tail - 18, 0, 100);
+      game.score += 1;
+      SND.starNote(game.noteStep++);
     }
   }
 
-  // =========================
-  // Input (touch-only + mouse works too)
-  // =========================
-  let pointerDown = false;
+  function hitBad(kind) {
+    game.lives -= 1;
+    game.combo = 0;
+    game.shake = 0.12;
 
-  function pointerXFromEvent(ev) {
-    const rect = canvas.getBoundingClientRect();
-    const x = (('touches' in ev) ? ev.touches[0].clientX : ev.clientX) - rect.left;
-    return x * DPR;
+    if (kind === 'teacher') SND.teacher();
+    else SND.grandpa();
+
+    if (game.lives <= 0) gameOver();
   }
 
-  function onDown(ev) {
-    ev.preventDefault();
-    pointerDown = true;
+  function hitGood(kind) {
+    if (kind === 'star') {
+      // punti aumentano con la coda (scelta “vera”)
+      const mult = 1 + (game.tail / 80); // 0..100 => 1..2.25 circa
+      game.score += Math.round(1 * mult);
 
-    // Audio must start on user gesture
-    SND.ensure();
-
-    const x = pointerXFromEvent(ev);
-    game.bunny.targetX = x;
-
-    if (game.state === STATE.IDLE) startGame();
-    else if (game.state === STATE.OVER) startGame();
+      game.combo += 1;
+      SND.starNote(game.noteStep++);
+      if (game.combo === 3) SND.jingle('c3');
+      if (game.combo === 5) SND.jingle('c5');
+      if (game.combo === 10) SND.jingle('c10');
+    } else if (kind === 'animal') {
+      game.lives = Math.min(5, game.lives + 1);
+      SND.animal();
+    } else if (kind === 'pizza') {
+      game.score += 2;
+      game.tail = clamp(game.tail + 8, 0, 100);
+      SND.pizza();
+    }
   }
-
-  function onMove(ev) {
-    if (!pointerDown) return;
-    ev.preventDefault();
-    const x = pointerXFromEvent(ev);
-    game.bunny.targetX = x;
-  }
-
-  function onUp(ev) {
-    ev.preventDefault();
-    pointerDown = false;
-  }
-
-  canvas.addEventListener('pointerdown', onDown, { passive: false });
-  canvas.addEventListener('pointermove', onMove, { passive: false });
-  canvas.addEventListener('pointerup', onUp, { passive: false });
-  canvas.addEventListener('pointercancel', onUp, { passive: false });
 
   // =========================
   // Update
@@ -774,240 +719,173 @@
   function update(dt) {
     const w = canvas.width, h = canvas.height;
 
-    // Bunny setup
-    game.bunny.y = h - (120 * DPR);
-    game.bunny.r = Math.max(22*DPR, Math.min(34*DPR, w*0.03));
-    if (game.bunny.x === 0) {
-      game.bunny.x = w/2;
-      game.bunny.targetX = w/2;
+    game.t += dt;
+    game.difficulty = clamp(game.t / 60, 0, 1);
+
+    // Bunny follow smooth (no jitter)
+    const b = game.bunny;
+    b.y = h * 0.78;
+    const follow = 14;
+    b.x += (clamp(b.targetX, b.r, w - b.r) - b.x) * Math.min(1, follow * dt);
+    b.wiggle = Math.sin(game.t * 6) * 0.25;
+
+    // Choice timer
+    game.choiceTimer -= dt;
+    if (game.choiceTimer <= 0) {
+      if (!game.items.some(it => it.isChoice)) spawnChoicePair();
+      game.choiceTimer = rand(3.0, 5.2);
     }
 
-    // Smooth follow (drag)
-    const bx = game.bunny.x;
-    const tx = clamp(game.bunny.targetX, 40*DPR, w - 40*DPR);
-    const ax = (tx - bx) * 22 * dt;       // “molla”
-    game.bunny.vx = (game.bunny.vx + ax) * Math.pow(0.06, dt); // damping
-    game.bunny.x = clamp(game.bunny.x + game.bunny.vx, 40*DPR, w - 40*DPR);
-    game.bunny.wiggle = lerp(game.bunny.wiggle, clamp(game.bunny.vx * 0.02, -1, 1), 8*dt);
+    // spawn random
+    spawnLogic(dt);
 
-    // Difficulty ramp (0..1)
-    if (game.state === STATE.PLAY) {
-      game.difficulty = clamp(game.difficulty + dt * 0.02, 0, 1);
-    }
+    // hitbox cresce con coda
+    const rEff = b.r * (1 + game.tail * 0.003);
 
-    // Flames
-    const nowSec = performance.now()/1000;
-    const slow = nowSec < game.slowUntil;
-    const baseSpeed = game.flamesSpeed * lerp(1.0, 1.8, game.difficulty);
-    const boost = Math.max(0, game.flamesBoost);
-    game.flamesBoost = Math.max(0, game.flamesBoost - 80*DPR*dt);
+    // update items
+    for (let i = game.items.length - 1; i >= 0; i--) {
+      const it = game.items[i];
+      it.y += it.speed * dt;
+      it.pulse = (it.pulse ?? 0) + dt * 2;
 
-    let flameSpeed = baseSpeed + boost;
-    if (slow) flameSpeed *= 0.55;
-    game.flames += flameSpeed * dt;
-
-    // Flame proximity sound
-    const dangerLine = h - game.bunny.y;
-    const intensity = clamp((game.flames - (dangerLine*0.55)) / (dangerLine*0.45), 0, 1);
-    SND.flameNear(intensity);
-
-    // Spawn + items
-    if (game.state === STATE.PLAY) {
-      spawnLogic(dt);
-      for (let i = game.items.length - 1; i >= 0; i--) {
-        const it = game.items[i];
-        it.y += it.speed * dt;
-        it.wobble += dt * rand(0.5, 1.2);
-        it.pulse = Math.max(0, it.pulse - dt*2.5);
-
-        // remove if off screen
-        if (it.y > h + it.r*3) game.items.splice(i, 1);
+      if (it.y > h + it.r * 2) {
+        game.items.splice(i, 1);
+        continue;
       }
 
-      // Collisions
-      const br = game.bunny.r;
-      const bx2 = game.bunny.x;
-      const by2 = game.bunny.y;
-      for (let i = game.items.length - 1; i >= 0; i--) {
-        const it = game.items[i];
-        const rr = (br * 0.90 + it.r * 0.95);
-        if (dist2(bx2, by2, it.x, it.y) < rr*rr) {
-          // hit
-          game.items.splice(i, 1);
-          it.pulse = 1;
-
-          if (it.kind === 'star') {
-            game.combo += 1;
-            game.noteStep += 1;
-            SND.starNote(game.noteStep);
-
-            // riduci pressione fiamme (tipo “cura”)
-            game.flames = Math.max(0, game.flames - (26*DPR + game.combo*0.6*DPR));
-
-            // jingles
-            if (game.combo === 3) SND.jingle('c3');
-            else if (game.combo === 5) SND.jingle('c5');
-            else if (game.combo === 10) SND.jingle('c10');
-
-            // micro bounce coniglio
-            game.bunny.wiggle += 0.12;
-
-          } else if (it.kind === 'teacher') {
-            // danno: fiamme su + combo rotta + shake
-            game.combo = 0;
-            game.flamesBoost += 120*DPR;
-            game.lives -= 1;
-            SND.teacher();
-            game.shake = 0.22;
-
-          } else if (it.kind === 'grandpa') {
-            game.combo = 0;
-            game.flamesBoost += 95*DPR;
-            game.lives -= 1;
-            SND.grandpa();
-            game.shake = 0.18;
-
-          } else if (it.kind === 'animal') {
-            // bonus: rallenta fiamme 3 sec
-            game.slowUntil = nowSec + 3.0;
-            SND.animal();
-            // piccolo regalo: abbassa un filo fiamme
-            game.flames = Math.max(0, game.flames - 50*DPR);
-
-          } else if (it.kind === 'pizza') {
-            // bonus: pioggia stelle 2 sec
-            game.starRainUntil = nowSec + 2.0;
-            SND.pizza();
-            // “festa”: riduci pressione e tieni combo
-            game.flames = Math.max(0, game.flames - 70*DPR);
-          }
+      if (collides(b.x, b.y, rEff, it.x, it.y, it.r)) {
+        if (it.isChoice) {
+          const group = it.group;
+          applyChoice(it.kind);
+          game.items = game.items.filter(o => !(o.isChoice && o.group === group));
+          continue;
         }
-      }
 
-      // Game over conditions
-      if (game.lives <= 0) {
-        gameOver();
-      } else {
-        // fiamme raggiungono coniglio
-        const bunnyFromBottom = h - game.bunny.y + br*0.45;
-        if (game.flames >= bunnyFromBottom) gameOver();
+        if (it.kind === 'teacher' || it.kind === 'grandpa') hitBad(it.kind);
+        else hitGood(it.kind);
+
+        game.items.splice(i, 1);
       }
     }
 
-    // Screen shake decay
-    game.shake = Math.max(0, game.shake - dt*1.5);
-    if (game.shake > 0) {
-      const mag = (12*DPR) * game.shake;
-      game.shakeX = rand(-mag, mag);
-      game.shakeY = rand(-mag, mag);
-    } else {
-      game.shakeX = 0; game.shakeY = 0;
-    }
+    // shake decay
+    game.shake = Math.max(0, game.shake - 0.9 * dt);
   }
 
   // =========================
-  // Draw
+  // Render
   // =========================
-  function drawBackground(w, h, t) {
-    // semplice gradiente + linee manga leggere
-    const g = ctx.createLinearGradient(0, 0, 0, h);
-    g.addColorStop(0, PAL.bgTop);
-    g.addColorStop(1, PAL.bgBot);
-    ctx.fillStyle = g;
-    ctx.fillRect(0, 0, w, h);
-
-    // linee “manga” sottili in alto (molto leggere)
+  function drawCarrotIcon(ctx, x, y, r, pulse=0) {
     ctx.save();
-    ctx.globalAlpha = 0.07;
-    ctx.strokeStyle = PAL.white;
-    ctx.lineWidth = Math.max(1, 1.5*DPR);
-    const lines = 10;
-    for (let i=0;i<lines;i++) {
-      const y = (i/lines) * h * 0.55 + (Math.sin(t*0.6+i)*6*DPR);
-      ctx.beginPath();
-      ctx.moveTo(0, y);
-      ctx.lineTo(w, y - rand(0, 18*DPR));
-      ctx.stroke();
-    }
+    const s = r * (1 + pulse*0.06);
+    ctx.lineWidth = Math.max(2, r*0.12);
+    ctx.strokeStyle = PAL.ink;
+
+    ctx.fillStyle = '#ff914d';
+    ctx.beginPath();
+    ctx.moveTo(x, y - s*0.70);
+    ctx.lineTo(x - s*0.45, y + s*0.55);
+    ctx.lineTo(x + s*0.45, y + s*0.55);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+
+    ctx.fillStyle = '#7CFF8A';
+    ctx.beginPath();
+    ctx.ellipse(x - s*0.15, y - s*0.85, s*0.18, s*0.28, -0.4, 0, Math.PI*2);
+    ctx.ellipse(x + s*0.15, y - s*0.85, s*0.18, s*0.28, 0.4, 0, Math.PI*2);
+    ctx.fill();
+    ctx.stroke();
+
     ctx.restore();
-  }
-
-  function drawLivesNearBunny() {
-    // 3 mini-stelline vicino al coniglio (non UI, sta “nel mondo”)
-    const x = game.bunny.x;
-    const y = game.bunny.y + game.bunny.r*1.00;
-    const r = game.bunny.r*0.22;
-    for (let i=0;i<3;i++) {
-      ctx.save();
-      ctx.globalAlpha = (i < game.lives) ? 0.95 : 0.20;
-      drawStarIcon(ctx, x + (i-1)*r*2.3, y, r*1.2, 0);
-      ctx.restore();
-    }
-  }
-
-  function drawItem(it, t) {
-    const wob = Math.sin(it.wobble) * it.r*0.06;
-    drawBubble(ctx, it.x + wob, it.y, it.r, it.bubble);
-
-    const pulse = it.pulse;
-    if (it.kind === 'star') drawStarIcon(ctx, it.x + wob, it.y, it.r*0.75, pulse);
-    else if (it.kind === 'teacher') drawTeacherIcon(ctx, it.x + wob, it.y, it.r*0.78, pulse);
-    else if (it.kind === 'grandpa') drawGrandpaIcon(ctx, it.x + wob, it.y, it.r*0.78, pulse);
-    else if (it.kind === 'animal') drawAnimalIcon(ctx, it.x + wob, it.y, it.r*0.78, pulse);
-    else if (it.kind === 'pizza') drawPizzaIcon(ctx, it.x + wob, it.y, it.r*0.78, pulse);
   }
 
   function render() {
     const w = canvas.width, h = canvas.height;
-    ctx.save();
-    ctx.translate(game.shakeX, game.shakeY);
 
-    drawBackground(w, h, game.t);
+    // background
+    const bg = ctx.createLinearGradient(0, 0, 0, h);
+    bg.addColorStop(0, PAL.bgTop);
+    bg.addColorStop(1, PAL.bgBot);
+    ctx.fillStyle = bg;
+    ctx.fillRect(0, 0, w, h);
 
-    // items
-    for (const it of game.items) drawItem(it, game.t);
-
-    // bunny
-    drawBunny(ctx, game.bunny.x, game.bunny.y, game.bunny.r, game.bunny.wiggle);
-
-    // lives (in-world)
-    drawLivesNearBunny();
-
-    // flames
-    drawFlames(ctx, game.flames, game.t, w, h);
-
-    // Idle / Over: niente testo, solo un “pulsino” discreto (tap to start)
-    if (game.state === STATE.IDLE || game.state === STATE.OVER) {
+    // shake
+    let shook = false;
+    if (game.shake > 0) {
+      const s = game.shake * 10 * DPR;
+      game.shakeX = rand(-s, s);
+      game.shakeY = rand(-s, s);
       ctx.save();
-      ctx.globalAlpha = 0.22;
-      const r = (24*DPR) + Math.sin(game.t*2.6)*4*DPR;
-      drawBubble(ctx, w*0.5, h*0.22, r, 'cloud');
-      // mini stella dentro per invogliare il tap
-      ctx.globalAlpha = 0.55;
-      drawStarIcon(ctx, w*0.5, h*0.22, r*0.55, 0);
-      ctx.restore();
+      ctx.translate(game.shakeX, game.shakeY);
+      shook = true;
     }
 
+    // FUOCO dietro (statico)
+    drawFlamesStatic(ctx, game.t, w, h);
+
+    // items
+    for (const it of game.items) {
+      drawBubble(ctx, it.x, it.y, it.r * 1.12, it.bubble);
+      const pulse = 0.5 + 0.5 * Math.sin((it.pulse || 0) * 3);
+
+      if (it.kind === 'star') drawStarIcon(ctx, it.x, it.y, it.r, pulse);
+      else if (it.kind === 'pizza') drawPizzaIcon(ctx, it.x, it.y, it.r, pulse);
+      else if (it.kind === 'animal') drawAnimalIcon(ctx, it.x, it.y, it.r, pulse);
+      else if (it.kind === 'teacher') drawTeacherIcon(ctx, it.x, it.y, it.r, pulse);
+      else if (it.kind === 'grandpa') drawGrandpaIcon(ctx, it.x, it.y, it.r, pulse);
+      else if (it.kind === 'carrot') drawCarrotIcon(ctx, it.x, it.y, it.r, pulse);
+    }
+
+    // bunny (davanti al fuoco)
+    drawBunny(ctx, game.bunny.x, game.bunny.y, game.bunny.r, game.bunny.wiggle, game.tail);
+
+    // vite (stelline vicino al coniglio)
+    const lx = game.bunny.x - game.bunny.r * 1.2;
+    const ly = game.bunny.y + game.bunny.r * 1.35;
+    for (let i=0;i<game.lives;i++) drawStarIcon(ctx, lx + i*(18*DPR), ly, 9*DPR, 0);
+
+    // testo minimo (score piccolo e pulito)
+    ctx.save();
+    ctx.fillStyle = 'rgba(255,255,255,0.85)';
+    ctx.font = `${Math.floor(16*DPR)}px system-ui, -apple-system, Segoe UI, Roboto, Arial`;
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'top';
+    ctx.fillText(`Punti: ${game.score}`, 12*DPR, 10*DPR);
     ctx.restore();
+
+    if (shook) ctx.restore();
+
+    if (game.state !== STATE.PLAY) {
+      ctx.save();
+      ctx.fillStyle = 'rgba(255,255,255,0.85)';
+      ctx.font = `${Math.floor(18*DPR)}px system-ui, -apple-system, Segoe UI, Roboto, Arial`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('TOCCA PER GIOCARE', w/2, h*0.25);
+      ctx.restore();
+    }
   }
 
   // =========================
-  // Main Loop
+  // Loop
   // =========================
-  function loop() {
-    const now = performance.now();
+  function loop(now) {
     const dt = Math.min(0.033, (now - game.last) / 1000);
     game.last = now;
 
-    game.t += dt;
-    update(dt);
+    if (game.state === STATE.PLAY) update(dt);
     render();
 
     requestAnimationFrame(loop);
   }
 
+  // =========================
+  // Start
+  // =========================
   resetToIdle();
   requestAnimationFrame(loop);
+
 })();
 </script>
 </body>
