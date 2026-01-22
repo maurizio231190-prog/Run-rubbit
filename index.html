@@ -3,10 +3,9 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no" />
-  <title>Coniglio & Fiamme</title>
+  <title>Cascata POP — Runner</title>
   <style>
     html, body { margin:0; padding:0; height:100%; background:#0b0b10; overflow:hidden; }
-    /* 100dvh evita i micro-resize “gelatina” su Android */
     canvas { display:block; width:100dvw; height:100dvh; touch-action:none; }
   </style>
 </head>
@@ -15,876 +14,483 @@
 
 <script>
 (() => {
-  // =========================
-  // Fullscreen Canvas
-  // =========================
   const canvas = document.getElementById('c');
-  const ctx = canvas.getContext('2d', { alpha: false });
+  const ctx = canvas.getContext('2d', { alpha:false });
 
   const DPR = Math.min(2, window.devicePixelRatio || 1);
-
-  function resize() {
+  function resize(){
     const vw = document.documentElement.clientWidth;
     const vh = document.documentElement.clientHeight;
-    canvas.width  = Math.floor(vw * DPR);
+    canvas.width = Math.floor(vw * DPR);
     canvas.height = Math.floor(vh * DPR);
   }
   addEventListener('resize', resize);
   resize();
 
-  // =========================
-  // Helpers
-  // =========================
-  const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
-  const lerp  = (a, b, t) => a + (b - a) * t;
-  const rand  = (a, b) => a + Math.random() * (b - a);
+  // ===== helpers
+  const clamp = (v,a,b)=>Math.max(a,Math.min(b,v));
+  const rand = (a,b)=>a+Math.random()*(b-a);
 
-  function dist2(ax, ay, bx, by) {
-    const dx = ax - bx, dy = ay - by;
-    return dx * dx + dy * dy;
+  // ===== minimal audio (opzionale)
+  class Snd {
+    constructor(){ this.ctx=null; this.g=null; this.cool=0; }
+    ensure(){
+      if(this.ctx) return;
+      const AC = window.AudioContext||window.webkitAudioContext;
+      if(!AC) return;
+      this.ctx=new AC();
+      this.g=this.ctx.createGain();
+      this.g.gain.value=0.18;
+      this.g.connect(this.ctx.destination);
+    }
+    beep(f=440,d=0.08,g=0.06,type='sine'){
+      if(!this.ctx) return;
+      const t0=this.ctx.currentTime;
+      const o=this.ctx.createOscillator();
+      const ga=this.ctx.createGain();
+      o.type=type;
+      o.frequency.setValueAtTime(f,t0);
+      ga.gain.setValueAtTime(0.0001,t0);
+      ga.gain.exponentialRampToValueAtTime(g,t0+0.01);
+      ga.gain.exponentialRampToValueAtTime(0.0001,t0+d);
+      o.connect(ga); ga.connect(this.g);
+      o.start(t0); o.stop(t0+d+0.02);
+    }
+    star(){ this.beep(rand(520,780),0.07,0.06,'sine'); this.beep(rand(980,1300),0.05,0.03,'triangle'); }
+    hit(){ this.beep(rand(140,190),0.14,0.07,'square'); }
   }
+  const S = new Snd();
 
-  // =========================
-  // Sound (procedural WebAudio)
-  // =========================
-  class SoundBank {
-    constructor() {
-      this.ctx = null;
-      this.master = null;
-      this.enabled = true;
-      this.cool = new Map();
-    }
-    ensure() {
-      if (this.ctx) return;
-      const AudioCtx = window.AudioContext || window.webkitAudioContext;
-      if (!AudioCtx) { this.enabled = false; return; }
-      this.ctx = new AudioCtx();
-      this.master = this.ctx.createGain();
-      this.master.gain.value = 0.25;
-      this.master.connect(this.ctx.destination);
-    }
-    now() { return this.ctx ? this.ctx.currentTime : 0; }
-    can(key, ms) {
-      const t = performance.now();
-      const last = this.cool.get(key) || 0;
-      if (t - last < ms) return false;
-      this.cool.set(key, t);
-      return true;
-    }
-    tone({freq=440, dur=0.12, type='sine', gain=0.08, detune=0, slideTo=null} = {}) {
-      if (!this.enabled) return;
-      this.ensure();
-      if (!this.ctx) return;
-      const t0 = this.now();
-      const o = this.ctx.createOscillator();
-      const g = this.ctx.createGain();
-      o.type = type;
-      o.frequency.setValueAtTime(freq, t0);
-      if (slideTo) o.frequency.exponentialRampToValueAtTime(slideTo, t0 + dur);
-      o.detune.setValueAtTime(detune, t0);
-      g.gain.setValueAtTime(0.0001, t0);
-      g.gain.exponentialRampToValueAtTime(gain, t0 + 0.01);
-      g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
-      o.connect(g); g.connect(this.master);
-      o.start(t0);
-      o.stop(t0 + dur + 0.02);
-    }
-    pop() {
-      if (!this.can('pop', 45)) return;
-      this.tone({freq: rand(250, 360), dur: 0.06, type:'triangle', gain: 0.06, slideTo: rand(140, 220)});
-      this.tone({freq: rand(900, 1200), dur: 0.04, type:'sine', gain: 0.03, detune: rand(-8, 8)});
-    }
-    starNote(step=0) {
-      if (!this.can('star', 35)) return;
-      const scale = [0,2,4,7,9,12,14,16];
-      const base = 440 * Math.pow(2, -1);
-      const semi = scale[step % scale.length] + (Math.random() < 0.08 ? 12 : 0);
-      const f = base * Math.pow(2, semi/12);
-      this.tone({freq: f * rand(0.98, 1.02), dur: 0.09, type:'sine', gain: 0.07});
-      this.tone({freq: f*2 * rand(0.99, 1.01), dur: 0.06, type:'triangle', gain: 0.035, detune: rand(-5,5)});
-    }
-    jingle(kind='c3') {
-      const key = 'jing'+kind;
-      if (!this.can(key, 120)) return;
-      this.ensure();
-      if (!this.ctx) return;
-      const t0 = this.now();
-      const mk = (f, dt, dur, g, type='sine') => {
-        const o = this.ctx.createOscillator();
-        const ga = this.ctx.createGain();
-        o.type = type;
-        o.frequency.setValueAtTime(f, t0 + dt);
-        ga.gain.setValueAtTime(0.0001, t0 + dt);
-        ga.gain.exponentialRampToValueAtTime(g, t0 + dt + 0.01);
-        ga.gain.exponentialRampToValueAtTime(0.0001, t0 + dt + dur);
-        o.connect(ga); ga.connect(this.master);
-        o.start(t0 + dt);
-        o.stop(t0 + dt + dur + 0.02);
-      };
-      const base = 330;
-      const seq = kind==='c10'
-        ? [0,4,7,12,7,16,12]
-        : kind==='c5'
-          ? [0,4,7,12]
-          : [0,7,12];
-      seq.forEach((s, i) => {
-        const f = base * Math.pow(2, s/12) * rand(0.995,1.005);
-        mk(f, i*0.08, 0.09, 0.06, i%2? 'triangle':'sine');
-      });
-    }
-    teacher() {
-      if (!this.can('teacher', 140)) return;
-      this.ensure();
-      if (!this.ctx) return;
-      const t0 = this.now();
-      const o = this.ctx.createOscillator();
-      const lfo = this.ctx.createOscillator();
-      const lfoG = this.ctx.createGain();
-      const g = this.ctx.createGain();
-      o.type = 'square';
-      o.frequency.setValueAtTime(rand(180, 260), t0);
-      lfo.type = 'sine';
-      lfo.frequency.setValueAtTime(rand(7, 10), t0);
-      lfoG.gain.setValueAtTime(rand(25, 45), t0);
-      lfo.connect(lfoG);
-      lfoG.connect(o.frequency);
-
-      g.gain.setValueAtTime(0.0001, t0);
-      g.gain.exponentialRampToValueAtTime(0.09, t0 + 0.02);
-      g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.22);
-
-      o.connect(g); g.connect(this.master);
-      lfo.start(t0); o.start(t0);
-      lfo.stop(t0 + 0.25); o.stop(t0 + 0.25);
-    }
-    grandpa() {
-      if (!this.can('grandpa', 140)) return;
-      this.tone({freq: rand(70, 95), dur: 0.22, type:'sawtooth', gain: 0.06, slideTo: rand(55, 75)});
-      this.tone({freq: rand(120, 150), dur: 0.14, type:'triangle', gain: 0.03, detune: rand(-12,12)});
-    }
-    animal() {
-      if (!this.can('animal', 90)) return;
-      this.tone({freq: rand(520, 740), dur: 0.10, type:'sine', gain: 0.06, slideTo: rand(900, 1200)});
-      if (Math.random() < 0.35) this.tone({freq: rand(260, 380), dur: 0.09, type:'triangle', gain: 0.03, slideTo: rand(220, 300)});
-    }
-    pizza() {
-      if (!this.can('pizza', 180)) return;
-      this.tone({freq: 440, dur: 0.10, type:'triangle', gain: 0.07, slideTo: 660});
-      this.tone({freq: 660, dur: 0.10, type:'sine', gain: 0.06, slideTo: 880});
-      if (Math.random() < 0.6) this.tone({freq: rand(110, 160), dur: 0.09, type:'square', gain: 0.03, detune: rand(-7,7)});
-    }
-  }
-
-  const SND = new SoundBank();
-
-  // =========================
-  // Visual style (minimal manga)
-  // =========================
+  // ===== palette (senza contorni)
   const PAL = {
-    bgTop: '#0b0b10',
-    bgBot: '#10101a',
-    ink: 'rgba(0,0,0,0.85)',
-    star: '#ffe37a',
-    bunny: '#f2f2f7',
-    bunny2: '#d9d9e6',
-    flame1: '#ff6a3a',
-    flame2: '#ffd36a',
-    bubble: 'rgba(250,250,255,0.92)',
-    teacher: '#ff7aa6',
-    grandpa: '#9de0ff',
-    animal: '#a8ffb6',
-    pizza: '#ffcf6e'
+    bgTop:'#0b0b10',
+    bgBot:'#131322',
+    glow1:'rgba(255,120,60,0.22)',
+    glow2:'rgba(255,210,120,0.12)',
+    ground:'#1b1b2d',
+    ground2:'#22223a',
+    bunny:'#f2f2f7',
+    bunny2:'#d9d9e6',
+    star:'#ffe37a',
+    bad:'#ff6a6a',
+    good:'#8dffb1'
   };
 
-  function drawBubble(ctx, x, y, r, type='oval') {
-    ctx.save();
-    const lw = Math.max(2, r * 0.12);
-    ctx.lineWidth = lw;
-    ctx.fillStyle = PAL.bubble;
-    ctx.strokeStyle = PAL.ink;
+  // ===== game state
+  const G = {
+    t:0,
+    last: performance.now(),
+    state:'idle', // idle | play | over
+    score:0,
+    lives:3,
 
-    if (type === 'oval') {
-      ctx.beginPath();
-      ctx.ellipse(x, y, r*1.12, r*0.92, 0, 0, Math.PI*2);
-      ctx.fill();
-      ctx.stroke();
-    } else if (type === 'cloud') {
-      const rr = r*0.55;
-      ctx.beginPath();
-      ctx.ellipse(x - r*0.55, y, rr, rr, 0, 0, Math.PI*2);
-      ctx.ellipse(x - r*0.15, y - r*0.30, rr*1.02, rr*1.02, 0, 0, Math.PI*2);
-      ctx.ellipse(x + r*0.35, y - r*0.05, rr*1.05, rr*1.05, 0, 0, Math.PI*2);
-      ctx.ellipse(x + r*0.65, y + r*0.18, rr*0.90, rr*0.90, 0, 0, Math.PI*2);
-      ctx.ellipse(x, y + r*0.38, rr*1.10, rr*0.90, 0, 0, Math.PI*2);
-      ctx.fill();
-      ctx.stroke();
-    } else { // spiky
-      const spikes = 12;
-      const inner = r*0.90;
-      const outer = r*1.15;
-      ctx.beginPath();
-      for (let i=0;i<spikes;i++) {
-        const a = (i/spikes) * Math.PI*2;
-        const rr = (i % 2 === 0) ? outer : inner;
-        const px = x + Math.cos(a) * rr;
-        const py = y + Math.sin(a) * rr;
-        if (i === 0) ctx.moveTo(px, py);
-        else ctx.lineTo(px, py);
-      }
-      ctx.closePath();
-      ctx.fill();
-      ctx.stroke();
+    // world speed
+    speed: 520 * DPR,
+    speedUp: 6 * DPR,
+
+    // ground
+    groundY: 0,
+    groundH: 0,
+    groundScroll: 0,
+
+    // player (coniglio)
+    p: { x:0, y:0, w:0, h:0, vy:0, onGround:true, coyote:0, jumpBuf:0, tail:22 },
+
+    // entities
+    obs: [],
+    stars: [],
+    spawnObs: 0,
+    spawnStar: 0
+  };
+
+  function reset(){
+    const W=canvas.width, H=canvas.height;
+    G.t=0;
+    G.state='idle';
+    G.score=0;
+    G.lives=3;
+    G.speed = 520 * DPR;
+    G.groundH = Math.max(70*DPR, H*0.16);
+    G.groundY = H - G.groundH;
+    G.groundScroll = 0;
+
+    G.p.w = 78*DPR;
+    G.p.h = 78*DPR;
+    G.p.x = W * 0.22;
+    G.p.y = G.groundY - G.p.h;
+    G.p.vy = 0;
+    G.p.onGround = true;
+    G.p.coyote = 0;
+    G.p.jumpBuf = 0;
+    G.p.tail = 22;
+
+    G.obs.length=0;
+    G.stars.length=0;
+    G.spawnObs = 0.8;
+    G.spawnStar = 0.35;
+  }
+  reset();
+
+  // ===== input: tap = jump
+  function requestJump(){
+    // buffer: se tocchi poco prima di atterrare, salta appena tocchi terra
+    G.p.jumpBuf = 0.14;
+  }
+  canvas.addEventListener('pointerdown', (e)=>{
+    S.ensure();
+    if(G.state!=='play'){
+      reset();
+      G.state='play';
+      return;
     }
+    requestJump();
+  });
 
-    ctx.globalAlpha = 0.14;
-    ctx.fillStyle = '#fff';
+  // ===== physics
+  function jump(){
+    const p=G.p;
+    // salto “morbido”
+    p.vy = -820 * DPR;
+    p.onGround=false;
+    p.coyote=0;
+    p.jumpBuf=0;
+  }
+
+  // ===== spawn
+  function spawnObstacle(){
+    const W=canvas.width;
+    const w = rand(56,82)*DPR;
+    const h = rand(70,96)*DPR;
+    G.obs.push({
+      x: W + w,
+      y: G.groundY - h,
+      w,h,
+      // variante “maestra cattiva” (rosso)
+      type:'bad',
+      bob: rand(0, Math.PI*2)
+    });
+  }
+  function spawnStar(){
+    const W=canvas.width;
+    const r = rand(16,22)*DPR;
+    const yMin = G.groundY - 220*DPR;
+    const yMax = G.groundY - 110*DPR;
+    G.stars.push({
+      x: W + r*2,
+      y: rand(yMin,yMax),
+      r,
+      spin: rand(0, Math.PI*2)
+    });
+  }
+
+  // ===== collisions
+  function aabb(ax,ay,aw,ah,bx,by,bw,bh){
+    return !(ax+aw<bx || ax>bx+bw || ay+ah<by || ay>by+bh);
+  }
+
+  // ===== render helpers (no lines)
+  function bg(){
+    const W=canvas.width, H=canvas.height;
+    const g = ctx.createLinearGradient(0,0,0,H);
+    g.addColorStop(0, PAL.bgTop);
+    g.addColorStop(1, PAL.bgBot);
+    ctx.fillStyle=g;
+    ctx.fillRect(0,0,W,H);
+
+    // glow dietro (fuoco “alle spalle” ma fermo)
+    ctx.globalAlpha=1;
+    ctx.fillStyle = PAL.glow1;
     ctx.beginPath();
-    ctx.ellipse(x - r*0.35, y - r*0.35, r*0.55, r*0.35, -0.6, 0, Math.PI*2);
+    ctx.ellipse(W*0.58, H*0.58, W*0.55, H*0.26, 0, 0, Math.PI*2);
     ctx.fill();
 
-    ctx.restore();
-  }
-
-  function drawKawaiiEyes(ctx, x, y, s) {
-    ctx.save();
-    ctx.fillStyle = PAL.ink;
-    ctx.beginPath(); ctx.ellipse(x - s*0.45, y, s*0.15, s*0.22, 0, 0, Math.PI*2); ctx.fill();
-    ctx.beginPath(); ctx.ellipse(x + s*0.45, y, s*0.15, s*0.22, 0, 0, Math.PI*2); ctx.fill();
-    ctx.fillStyle = 'rgba(255,255,255,0.85)';
-    ctx.beginPath(); ctx.ellipse(x - s*0.52, y - s*0.06, s*0.06, s*0.06, 0, 0, Math.PI*2); ctx.fill();
-    ctx.beginPath(); ctx.ellipse(x + s*0.38, y - s*0.06, s*0.05, s*0.05, 0, 0, Math.PI*2); ctx.fill();
-    ctx.restore();
-  }
-
-  function drawStarIcon(ctx, x, y, r, pulse=0) {
-    ctx.save();
-    const s = r * (1 + pulse*0.06);
-    ctx.fillStyle = PAL.star;
-    ctx.strokeStyle = PAL.ink;
-    ctx.lineWidth = Math.max(2, r*0.12);
-
+    ctx.fillStyle = PAL.glow2;
     ctx.beginPath();
-    const points = 5;
-    const outer = s*0.72;
-    const inner = s*0.34;
-    for (let i=0;i<points*2;i++) {
-      const a = (i/(points*2))*Math.PI*2 - Math.PI/2;
-      const rr = (i%2===0) ? outer : inner;
-      const px = x + Math.cos(a)*rr;
-      const py = y + Math.sin(a)*rr;
-      if (i===0) ctx.moveTo(px,py); else ctx.lineTo(px,py);
+    ctx.ellipse(W*0.62, H*0.62, W*0.62, H*0.30, 0, 0, Math.PI*2);
+    ctx.fill();
+
+    // piccole particelle (parallasse finta)
+    const n=22;
+    for(let i=0;i<n;i++){
+      const x = (i*97 + (G.t*40)) % (W+120) - 60;
+      const y = (i*53) % (H*0.65);
+      ctx.globalAlpha = 0.08;
+      ctx.fillStyle = 'white';
+      ctx.beginPath();
+      ctx.ellipse(x, y, 2.2*DPR, 2.2*DPR, 0, 0, Math.PI*2);
+      ctx.fill();
     }
-    ctx.closePath();
+    ctx.globalAlpha=1;
+  }
+
+  function ground(){
+    const W=canvas.width, H=canvas.height;
+    // base
+    ctx.fillStyle = PAL.ground;
+    ctx.fillRect(0, G.groundY, W, G.groundH);
+
+    // stripes che scorrono = “sensazione corsa”
+    const stripeW = 64*DPR;
+    const gap = 26*DPR;
+    const y = G.groundY + G.groundH*0.22;
+    const h = G.groundH*0.18;
+
+    const off = (G.groundScroll % (stripeW+gap));
+    for(let x=-off; x<W+stripeW; x += (stripeW+gap)){
+      ctx.globalAlpha = 0.18;
+      ctx.fillStyle = PAL.ground2;
+      ctx.beginPath();
+      ctx.roundRect(x, y, stripeW, h, 18*DPR);
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+
+    // linea “horizon” soft
+    const g = ctx.createLinearGradient(0, G.groundY-18*DPR, 0, G.groundY+18*DPR);
+    g.addColorStop(0,'rgba(255,255,255,0)');
+    g.addColorStop(1,'rgba(255,255,255,0.06)');
+    ctx.fillStyle=g;
+    ctx.fillRect(0, G.groundY-18*DPR, W, 36*DPR);
+  }
+
+  function drawBunny(){
+    const p=G.p;
+    const x=p.x, y=p.y, w=p.w, h=p.h;
+
+    // ombra
+    ctx.globalAlpha=0.18;
+    ctx.fillStyle='black';
+    ctx.beginPath();
+    ctx.ellipse(x+w*0.52, G.groundY + 10*DPR, w*0.40, 10*DPR, 0, 0, Math.PI*2);
     ctx.fill();
-    ctx.stroke();
+    ctx.globalAlpha=1;
 
-    drawKawaiiEyes(ctx, x, y + s*0.06, s*0.60);
-    ctx.strokeStyle = PAL.ink;
-    ctx.lineWidth = Math.max(2, r*0.10);
-    ctx.beginPath();
-    ctx.arc(x, y + s*0.20, s*0.18, 0, Math.PI);
-    ctx.stroke();
-
-    ctx.restore();
-  }
-
-  function drawPizzaIcon(ctx, x, y, r, pulse=0) {
-    ctx.save();
-    const s = r * (1 + pulse*0.06);
-    ctx.fillStyle = PAL.pizza;
-    ctx.strokeStyle = PAL.ink;
-    ctx.lineWidth = Math.max(2, r*0.12);
-
-    ctx.beginPath();
-    ctx.moveTo(x, y - s*0.70);
-    ctx.lineTo(x - s*0.55, y + s*0.55);
-    ctx.lineTo(x + s*0.55, y + s*0.55);
-    ctx.closePath();
-    ctx.fill(); ctx.stroke();
-
-    ctx.fillStyle = '#ffb85c';
-    ctx.beginPath();
-    ctx.moveTo(x, y - s*0.70);
-    ctx.quadraticCurveTo(x - s*0.35, y - s*0.45, x - s*0.55, y + s*0.55);
-    ctx.quadraticCurveTo(x, y + s*0.35, x + s*0.55, y + s*0.55);
-    ctx.quadraticCurveTo(x + s*0.35, y - s*0.45, x, y - s*0.70);
-    ctx.closePath();
-    ctx.fill(); ctx.stroke();
-
-    ctx.fillStyle = '#ff6a6a';
-    ctx.beginPath(); ctx.ellipse(x - s*0.18, y + s*0.05, s*0.14, s*0.14, 0, 0, Math.PI*2); ctx.fill();
-    ctx.beginPath(); ctx.ellipse(x + s*0.18, y + s*0.15, s*0.14, s*0.14, 0, 0, Math.PI*2); ctx.fill();
-
-    ctx.restore();
-  }
-
-  function drawAnimalIcon(ctx, x, y, r, pulse=0) {
-    ctx.save();
-    const s = r * (1 + pulse*0.06);
-    const lw = Math.max(2, r*0.12);
-    ctx.lineWidth = lw;
-    ctx.fillStyle = PAL.animal;
-    ctx.strokeStyle = PAL.ink;
-
-    ctx.beginPath();
-    ctx.ellipse(x, y, s*0.70, s*0.62, 0, 0, Math.PI*2);
-    ctx.fill(); ctx.stroke();
-
-    ctx.beginPath();
-    ctx.ellipse(x - s*0.45, y - s*0.50, s*0.20, s*0.28, -0.25, 0, Math.PI*2);
-    ctx.ellipse(x + s*0.45, y - s*0.50, s*0.20, s*0.28, 0.25, 0, Math.PI*2);
-    ctx.fill(); ctx.stroke();
-
-    drawKawaiiEyes(ctx, x, y - s*0.05, s*0.70);
-
-    ctx.fillStyle = PAL.ink;
-    ctx.beginPath();
-    ctx.ellipse(x, y + s*0.18, s*0.10, s*0.08, 0, 0, Math.PI*2);
-    ctx.fill();
-
-    ctx.restore();
-  }
-
-  function drawTeacherIcon(ctx, x, y, r, pulse=0) {
-    ctx.save();
-    const s = r * (1 + pulse*0.05);
-    const lw = Math.max(2, r*0.12);
-    ctx.lineWidth = lw;
-    ctx.strokeStyle = PAL.ink;
-
-    ctx.fillStyle = '#ffd7e5';
-    ctx.beginPath();
-    ctx.ellipse(x, y, s*0.70, s*0.66, 0, 0, Math.PI*2);
-    ctx.fill(); ctx.stroke();
-
-    ctx.fillStyle = PAL.teacher;
-    ctx.beginPath();
-    ctx.ellipse(x + s*0.60, y - s*0.55, s*0.20, s*0.20, 0, 0, Math.PI*2);
-    ctx.fill(); ctx.stroke();
-
-    ctx.save();
-    ctx.lineWidth = Math.max(1.5, lw*0.75);
-    ctx.strokeStyle = PAL.ink;
-    ctx.beginPath();
-    ctx.ellipse(x - s*0.28, y - s*0.05, s*0.22, s*0.18, 0, 0, Math.PI*2);
-    ctx.ellipse(x + s*0.28, y - s*0.05, s*0.22, s*0.18, 0, 0, Math.PI*2);
-    ctx.moveTo(x - s*0.06, y - s*0.05);
-    ctx.lineTo(x + s*0.06, y - s*0.05);
-    ctx.stroke();
-    ctx.restore();
-
-    ctx.fillStyle = PAL.ink;
-    ctx.beginPath(); ctx.ellipse(x - s*0.28, y - s*0.05, s*0.07, s*0.11, 0, 0, Math.PI*2); ctx.fill();
-    ctx.beginPath(); ctx.ellipse(x + s*0.28, y - s*0.05, s*0.07, s*0.11, 0, 0, Math.PI*2); ctx.fill();
-
-    ctx.fillStyle = '#ff4b4b';
-    ctx.beginPath();
-    ctx.ellipse(x, y + s*0.30, s*0.18, s*0.22, 0, 0, Math.PI*2);
-    ctx.fill();
-
-    ctx.restore();
-  }
-
-  function drawGrandpaIcon(ctx, x, y, r, pulse=0) {
-    ctx.save();
-    const s = r * (1 + pulse*0.05);
-    const lw = Math.max(2, r*0.12);
-    ctx.lineWidth = lw;
-    ctx.strokeStyle = PAL.ink;
-
-    ctx.fillStyle = '#d6f3ff';
-    ctx.beginPath();
-    ctx.ellipse(x, y, s*0.72, s*0.66, 0, 0, Math.PI*2);
-    ctx.fill(); ctx.stroke();
-
-    ctx.fillStyle = PAL.ink;
-    ctx.beginPath(); ctx.ellipse(x - s*0.25, y - s*0.05, s*0.08, s*0.10, 0, 0, Math.PI*2); ctx.fill();
-    ctx.beginPath(); ctx.ellipse(x + s*0.25, y - s*0.05, s*0.08, s*0.10, 0, 0, Math.PI*2); ctx.fill();
-
-    ctx.restore();
-  }
-
-  // Coda che cresce (tail 0..100)
-  function drawBunny(ctx, x, y, r, wiggle=0, tail=0) {
-    ctx.save();
-    const lw = Math.max(2, r*0.10);
-    ctx.lineWidth = lw;
-    ctx.strokeStyle = PAL.ink;
-
-    const t = clamp(tail, 0, 100);
-    const tailR = r * (0.26 + t * 0.006);
-    const tailX = x + r*0.95;
-    const tailY = y + r*0.35;
-
+    // coda “gonfia”
+    const tail = p.tail; // 0..100-ish
+    const tailR = (w*0.13) + tail*0.09*DPR;
     ctx.fillStyle = PAL.bunny2;
     ctx.beginPath();
-    ctx.ellipse(tailX, tailY, tailR, tailR*0.92, 0, 0, Math.PI*2);
-    ctx.fill();
-    ctx.stroke();
-
-    ctx.fillStyle = PAL.bunny;
-    ctx.beginPath();
-    ctx.ellipse(x, y + r*0.25, r*0.85, r*0.75, 0, 0, Math.PI*2);
-    ctx.fill(); ctx.stroke();
-
-    ctx.beginPath();
-    ctx.ellipse(x, y - r*0.15, r*0.75, r*0.68, 0, 0, Math.PI*2);
-    ctx.fill(); ctx.stroke();
-
-    const a = wiggle * 0.35;
-    ctx.fillStyle = PAL.bunny;
-    ctx.beginPath();
-    ctx.ellipse(x - r*0.35, y - r*0.92, r*0.22, r*0.70, -0.18 - a, 0, Math.PI*2);
-    ctx.ellipse(x + r*0.35, y - r*0.92, r*0.22, r*0.70, 0.18 + a, 0, Math.PI*2);
-    ctx.fill(); ctx.stroke();
-
-    drawKawaiiEyes(ctx, x, y - r*0.12, r*0.85);
-
-    ctx.fillStyle = PAL.ink;
-    ctx.beginPath();
-    ctx.ellipse(x, y + r*0.10, r*0.08, r*0.06, 0, 0, Math.PI*2);
+    ctx.ellipse(x+w*0.88, y+h*0.58, tailR, tailR*0.92, 0, 0, Math.PI*2);
     ctx.fill();
 
-    ctx.save();
-    ctx.strokeStyle = PAL.ink;
-    ctx.lineWidth = Math.max(2, lw*0.55);
+    // corpo
+    ctx.fillStyle = PAL.bunny;
     ctx.beginPath();
-    ctx.arc(x, y + r*0.22, r*0.16, 0, Math.PI);
-    ctx.stroke();
-    ctx.restore();
+    ctx.ellipse(x+w*0.52, y+h*0.58, w*0.36, h*0.30, 0, 0, Math.PI*2);
+    ctx.fill();
 
-    ctx.restore();
+    // testa
+    ctx.beginPath();
+    ctx.ellipse(x+w*0.48, y+h*0.34, w*0.30, h*0.26, 0, 0, Math.PI*2);
+    ctx.fill();
+
+    // orecchie (piccolo “bop” mentre corre)
+    const bob = 1 + 0.03*Math.sin(G.t*10);
+    ctx.beginPath();
+    ctx.ellipse(x+w*0.38, y+h*0.08, w*0.10, h*0.22*bob, -0.22, 0, Math.PI*2);
+    ctx.ellipse(x+w*0.56, y+h*0.08, w*0.10, h*0.22*bob,  0.22, 0, Math.PI*2);
+    ctx.fill();
+
+    // occhi (puntini kawaii)
+    ctx.fillStyle = 'rgba(0,0,0,0.78)';
+    ctx.beginPath(); ctx.ellipse(x+w*0.40, y+h*0.33, w*0.03, h*0.05, 0, 0, Math.PI*2); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(x+w*0.54, y+h*0.33, w*0.03, h*0.05, 0, 0, Math.PI*2); ctx.fill();
+
+    // naso
+    ctx.fillStyle = 'rgba(0,0,0,0.62)';
+    ctx.beginPath(); ctx.ellipse(x+w*0.47, y+h*0.42, w*0.02, h*0.02, 0, 0, Math.PI*2); ctx.fill();
   }
 
-  // =========================
-  // Fuoco dietro: statico (forma fissa) + flicker (luminosità)
-  // =========================
-  const FLAME_WAVES = Array.from({length: 6}, (_, i) =>
-    Math.sin(i*1.7) * 0.6 + Math.cos(i*0.9) * 0.4
-  );
-
-  function drawFlamesStatic(ctx, t, w, h) {
-    const yFromBottom = Math.floor(h * 0.38); // sempre uguale
-    const baseY = h - yFromBottom;
-    const amp = Math.max(10*DPR, Math.min(44*DPR, yFromBottom * 0.12));
-
-    const flick = 0.90 + 0.10 * Math.sin(t * 10.0);
-
-    ctx.save();
-    ctx.globalAlpha = flick;
-
-    const grad = ctx.createLinearGradient(0, baseY-amp*2, 0, h);
-    grad.addColorStop(0, PAL.flame2);
-    grad.addColorStop(0.55, PAL.flame1);
-    grad.addColorStop(1, 'rgba(255,70,20,1)');
-    ctx.fillStyle = grad;
-
+  function drawStar(s){
+    const pulse = 0.5 + 0.5*Math.sin(s.spin*3);
+    const r = s.r * (1 + pulse*0.08);
+    ctx.fillStyle = PAL.star;
     ctx.beginPath();
-    ctx.moveTo(0, h);
-    ctx.lineTo(0, baseY);
-
-    const waves = 5;
-    for (let i=0;i<=waves;i++) {
-      const x = (i/waves) * w;
-      const s = FLAME_WAVES[i] ?? 0;
-      const y = baseY - amp*(0.65 + 0.35*s);
-      ctx.quadraticCurveTo(x - w/(waves*2), y, x, y);
+    const spikes=5;
+    for(let i=0;i<spikes*2;i++){
+      const a = (i/(spikes*2))*Math.PI*2 - Math.PI/2;
+      const rr = (i%2===0)? r : r*0.45;
+      const px = s.x + Math.cos(a)*rr;
+      const py = s.y + Math.sin(a)*rr;
+      if(i===0) ctx.moveTo(px,py); else ctx.lineTo(px,py);
     }
-    ctx.lineTo(w, h);
     ctx.closePath();
     ctx.fill();
+  }
 
-    ctx.globalAlpha = 0.70;
-    ctx.strokeStyle = 'rgba(0,0,0,0.55)';
-    ctx.lineWidth = Math.max(2, 3*DPR);
+  function drawBad(o){
+    // “maestra cattiva” super semplificata e morbida (rosso)
+    ctx.fillStyle = PAL.bad;
     ctx.beginPath();
-    for (let i=0;i<=waves;i++) {
-      const x = (i/waves) * w;
-      const s = FLAME_WAVES[i] ?? 0;
-      const y = baseY - amp*(0.65 + 0.35*s);
-      if (i===0) ctx.moveTo(x, y);
-      else ctx.quadraticCurveTo(x - w/(waves*2), y, x, y);
-    }
-    ctx.stroke();
+    ctx.roundRect(o.x, o.y, o.w, o.h, 18*DPR);
+    ctx.fill();
 
-    ctx.restore();
+    // bocca “urlo” (solo un ovalino scuro)
+    ctx.fillStyle = 'rgba(0,0,0,0.28)';
+    ctx.beginPath();
+    ctx.ellipse(o.x+o.w*0.55, o.y+o.h*0.58, o.w*0.12, o.h*0.12, 0, 0, Math.PI*2);
+    ctx.fill();
   }
 
-  // =========================
-  // Game State
-  // =========================
-  const STATE = { IDLE:'idle', PLAY:'play', OVER:'over' };
+  // ===== update
+  function update(dt){
+    const W=canvas.width, H=canvas.height;
+    G.t += dt;
 
-  const game = {
-    state: STATE.IDLE,
-    t: 0,
-    last: performance.now(),
-    shake: 0,
-    shakeX: 0,
-    shakeY: 0,
+    // accelera piano
+    G.speed = Math.min(920*DPR, G.speed + G.speedUp*dt);
 
-    bunny: {
-      x: canvas.width * 0.5,
-      y: canvas.height * 0.78,
-      r: 24*DPR,
-      targetX: canvas.width * 0.5,
-      wiggle: 0
-    },
+    // ground scroll
+    G.groundScroll += G.speed * dt;
 
-    lives: 3,
-    score: 0,
-    combo: 0,
-    noteStep: 0,
+    // player physics
+    const p=G.p;
+    const gravity = 2100 * DPR;
+    p.jumpBuf = Math.max(0, p.jumpBuf - dt);
 
-    tail: 20, // 0..100
+    // coyote time
+    if(p.onGround) p.coyote = 0.10;
+    else p.coyote = Math.max(0, p.coyote - dt);
 
-    items: [],
-    spawnTimer: 0.2,
-    difficulty: 0,
-
-    // scelte
-    choiceTimer: 2.8,
-    choiceId: 0
-  };
-
-  function resetToIdle() {
-    game.state = STATE.IDLE;
-    game.t = 0;
-    game.items.length = 0;
-    game.lives = 3;
-    game.score = 0;
-    game.combo = 0;
-    game.noteStep = 0;
-    game.tail = 20;
-    game.spawnTimer = 0.2;
-    game.difficulty = 0;
-    game.choiceTimer = 2.8;
-  }
-
-  function startGame() {
-    game.state = STATE.PLAY;
-    game.t = 0;
-    game.items.length = 0;
-    game.lives = 3;
-    game.score = 0;
-    game.combo = 0;
-    game.noteStep = 0;
-    game.tail = 20;
-    game.spawnTimer = 0.25;
-    game.difficulty = 0;
-    game.choiceTimer = 2.2;
-  }
-
-  function gameOver() {
-    game.state = STATE.OVER;
-    game.items.length = 0;
-    game.shake = 0.25;
-  }
-
-  // =========================
-  // Items
-  // =========================
-  // kind: 'star' | 'teacher' | 'grandpa' | 'animal' | 'pizza' | 'carrot'(choice)
-  function spawnItem(kind) {
-    const w = canvas.width;
-    const margin = 70 * DPR;
-    const r = rand(22, 30) * DPR;
-    const x = rand(margin, w - margin);
-    const y = -r * 2;
-
-    const speedBase = lerp(230, 360, clamp(game.difficulty, 0, 1)) * DPR;
-    const speed = speedBase * rand(0.85, 1.15);
-
-    let bubble = 'oval';
-    if (kind === 'teacher' || kind === 'grandpa') bubble = 'spiky';
-    else if (kind === 'animal') bubble = (Math.random()<0.5 ? 'cloud' : 'oval');
-    else if (kind === 'pizza') bubble = 'cloud';
-
-    game.items.push({ kind, x, y, r, bubble, speed, pulse: 0, wobble: rand(0, Math.PI*2) });
-    SND.pop();
-  }
-
-  function spawnChoicePair() {
-    const w = canvas.width;
-    const r = 34 * DPR;
-    const y = -r * 2;
-    const speed = (lerp(200, 270, clamp(game.difficulty,0,1)) * DPR);
-    const id = ++game.choiceId;
-
-    game.items.push({ kind:'pizza',  isChoice:true, group:id, x:w*0.30, y, r, bubble:'cloud', speed, pulse:0, wobble:0 });
-    game.items.push({ kind:'carrot', isChoice:true, group:id, x:w*0.70, y, r, bubble:'oval',  speed, pulse:0, wobble:0 });
-
-    SND.pop();
-  }
-
-  function spawnLogic(dt) {
-    // non spammare: se c’è una scelta in corso, niente spawn random
-    const hasChoice = game.items.some(it => it.isChoice);
-    if (hasChoice) return;
-
-    game.spawnTimer -= dt;
-    if (game.spawnTimer > 0) return;
-
-    const base = lerp(0.62, 0.34, clamp(game.difficulty, 0, 1));
-    game.spawnTimer = base * rand(0.75, 1.25);
-
-    const roll = Math.random();
-    if (roll < 0.62) spawnItem('star');
-    else if (roll < 0.78) spawnItem('pizza');
-    else if (roll < 0.88) spawnItem('animal');
-    else if (roll < 0.94) spawnItem('teacher');
-    else spawnItem('grandpa');
-  }
-
-  // =========================
-  // Input (DPR-safe)
-  // =========================
-  function canvasXFromEvent(e) {
-    const rect = canvas.getBoundingClientRect();
-    return (e.clientX - rect.left) * DPR;
-  }
-
-  let pointerDown = false;
-
-  canvas.addEventListener('pointerdown', (e) => {
-    pointerDown = true;
-    SND.ensure(); // unlock audio
-
-    if (game.state !== STATE.PLAY) startGame();
-
-    game.bunny.targetX = canvasXFromEvent(e);
-  });
-
-  canvas.addEventListener('pointermove', (e) => {
-    if (!pointerDown) return;
-    game.bunny.targetX = canvasXFromEvent(e);
-  });
-
-  addEventListener('pointerup', () => { pointerDown = false; });
-
-  // =========================
-  // Collision + Rules
-  // =========================
-  function collides(bx, by, br, ix, iy, ir) {
-    return dist2(bx, by, ix, iy) <= (br + ir) * (br + ir);
-  }
-
-  function applyChoice(kind) {
-    if (kind === 'pizza') {
-      game.tail = clamp(game.tail + 18, 0, 100);
-      game.score += 2;
-      SND.pizza();
-    } else if (kind === 'carrot') {
-      game.tail = clamp(game.tail - 18, 0, 100);
-      game.score += 1;
-      SND.starNote(game.noteStep++);
-    }
-  }
-
-  function hitBad(kind) {
-    game.lives -= 1;
-    game.combo = 0;
-    game.shake = 0.12;
-
-    if (kind === 'teacher') SND.teacher();
-    else SND.grandpa();
-
-    if (game.lives <= 0) gameOver();
-  }
-
-  function hitGood(kind) {
-    if (kind === 'star') {
-      // punti aumentano con la coda (scelta “vera”)
-      const mult = 1 + (game.tail / 80); // 0..100 => 1..2.25 circa
-      game.score += Math.round(1 * mult);
-
-      game.combo += 1;
-      SND.starNote(game.noteStep++);
-      if (game.combo === 3) SND.jingle('c3');
-      if (game.combo === 5) SND.jingle('c5');
-      if (game.combo === 10) SND.jingle('c10');
-    } else if (kind === 'animal') {
-      game.lives = Math.min(5, game.lives + 1);
-      SND.animal();
-    } else if (kind === 'pizza') {
-      game.score += 2;
-      game.tail = clamp(game.tail + 8, 0, 100);
-      SND.pizza();
-    }
-  }
-
-  // =========================
-  // Update
-  // =========================
-  function update(dt) {
-    const w = canvas.width, h = canvas.height;
-
-    game.t += dt;
-    game.difficulty = clamp(game.t / 60, 0, 1);
-
-    // Bunny follow smooth (no jitter)
-    const b = game.bunny;
-    b.y = h * 0.78;
-    const follow = 14;
-    b.x += (clamp(b.targetX, b.r, w - b.r) - b.x) * Math.min(1, follow * dt);
-    b.wiggle = Math.sin(game.t * 6) * 0.25;
-
-    // Choice timer
-    game.choiceTimer -= dt;
-    if (game.choiceTimer <= 0) {
-      if (!game.items.some(it => it.isChoice)) spawnChoicePair();
-      game.choiceTimer = rand(3.0, 5.2);
+    // jump trigger
+    if(p.jumpBuf>0 && p.coyote>0){
+      jump();
     }
 
-    // spawn random
-    spawnLogic(dt);
+    // integrate
+    p.vy += gravity * dt;
+    p.y += p.vy * dt;
 
-    // hitbox cresce con coda
-    const rEff = b.r * (1 + game.tail * 0.003);
+    // ground collision
+    const groundTop = G.groundY - p.h;
+    if(p.y >= groundTop){
+      p.y = groundTop;
+      p.vy = 0;
+      p.onGround = true;
+    } else {
+      p.onGround = false;
+    }
 
-    // update items
-    for (let i = game.items.length - 1; i >= 0; i--) {
-      const it = game.items[i];
-      it.y += it.speed * dt;
-      it.pulse = (it.pulse ?? 0) + dt * 2;
+    // spawn timers
+    G.spawnObs -= dt;
+    if(G.spawnObs<=0){
+      spawnObstacle();
+      G.spawnObs = rand(1.05, 1.65) / (0.85 + G.difficulty());
+    }
 
-      if (it.y > h + it.r * 2) {
-        game.items.splice(i, 1);
-        continue;
-      }
+    G.spawnStar -= dt;
+    if(G.spawnStar<=0){
+      spawnStar();
+      G.spawnStar = rand(0.35, 0.75);
+    }
 
-      if (collides(b.x, b.y, rEff, it.x, it.y, it.r)) {
-        if (it.isChoice) {
-          const group = it.group;
-          applyChoice(it.kind);
-          game.items = game.items.filter(o => !(o.isChoice && o.group === group));
-          continue;
+    // move obstacles
+    for(let i=G.obs.length-1;i>=0;i--){
+      const o=G.obs[i];
+      o.x -= G.speed * dt;
+      if(o.x < -o.w-40*DPR){ G.obs.splice(i,1); continue; }
+
+      // collision
+      const hit = aabb(p.x+p.w*0.18, p.y+p.h*0.18, p.w*0.64, p.h*0.70, o.x, o.y, o.w, o.h);
+      if(hit){
+        G.obs.splice(i,1);
+        G.lives--;
+        S.hit();
+        // penalità: coda si sgonfia un po'
+        p.tail = Math.max(0, p.tail - 10);
+        if(G.lives<=0){
+          G.state='over';
         }
-
-        if (it.kind === 'teacher' || it.kind === 'grandpa') hitBad(it.kind);
-        else hitGood(it.kind);
-
-        game.items.splice(i, 1);
       }
     }
 
-    // shake decay
-    game.shake = Math.max(0, game.shake - 0.9 * dt);
+    // move stars
+    for(let i=G.stars.length-1;i>=0;i--){
+      const s=G.stars[i];
+      s.x -= (G.speed*1.02) * dt;
+      s.spin += dt*2.2;
+      if(s.x < -s.r-40*DPR){ G.stars.splice(i,1); continue; }
+
+      // collision
+      const hit = aabb(p.x+p.w*0.18, p.y+p.h*0.18, p.w*0.64, p.h*0.70, s.x-s.r, s.y-s.r, s.r*2, s.r*2);
+      if(hit){
+        G.stars.splice(i,1);
+        G.score++;
+        S.star();
+        // reward: coda cresce (stile “scelte”/progressione)
+        p.tail = Math.min(100, p.tail + 6);
+      }
+    }
   }
 
-  // =========================
-  // Render
-  // =========================
-  function drawCarrotIcon(ctx, x, y, r, pulse=0) {
-    ctx.save();
-    const s = r * (1 + pulse*0.06);
-    ctx.lineWidth = Math.max(2, r*0.12);
-    ctx.strokeStyle = PAL.ink;
+  // difficoltà “soft” (0..1)
+  G.difficulty = () => clamp(G.t/70, 0, 1);
 
-    ctx.fillStyle = '#ff914d';
-    ctx.beginPath();
-    ctx.moveTo(x, y - s*0.70);
-    ctx.lineTo(x - s*0.45, y + s*0.55);
-    ctx.lineTo(x + s*0.45, y + s*0.55);
-    ctx.closePath();
-    ctx.fill();
-    ctx.stroke();
-
-    ctx.fillStyle = '#7CFF8A';
-    ctx.beginPath();
-    ctx.ellipse(x - s*0.15, y - s*0.85, s*0.18, s*0.28, -0.4, 0, Math.PI*2);
-    ctx.ellipse(x + s*0.15, y - s*0.85, s*0.18, s*0.28, 0.4, 0, Math.PI*2);
-    ctx.fill();
-    ctx.stroke();
-
-    ctx.restore();
-  }
-
-  function render() {
-    const w = canvas.width, h = canvas.height;
-
-    // background
-    const bg = ctx.createLinearGradient(0, 0, 0, h);
-    bg.addColorStop(0, PAL.bgTop);
-    bg.addColorStop(1, PAL.bgBot);
-    ctx.fillStyle = bg;
-    ctx.fillRect(0, 0, w, h);
-
-    // shake
-    let shook = false;
-    if (game.shake > 0) {
-      const s = game.shake * 10 * DPR;
-      game.shakeX = rand(-s, s);
-      game.shakeY = rand(-s, s);
-      ctx.save();
-      ctx.translate(game.shakeX, game.shakeY);
-      shook = true;
-    }
-
-    // FUOCO dietro (statico)
-    drawFlamesStatic(ctx, game.t, w, h);
-
-    // items
-    for (const it of game.items) {
-      drawBubble(ctx, it.x, it.y, it.r * 1.12, it.bubble);
-      const pulse = 0.5 + 0.5 * Math.sin((it.pulse || 0) * 3);
-
-      if (it.kind === 'star') drawStarIcon(ctx, it.x, it.y, it.r, pulse);
-      else if (it.kind === 'pizza') drawPizzaIcon(ctx, it.x, it.y, it.r, pulse);
-      else if (it.kind === 'animal') drawAnimalIcon(ctx, it.x, it.y, it.r, pulse);
-      else if (it.kind === 'teacher') drawTeacherIcon(ctx, it.x, it.y, it.r, pulse);
-      else if (it.kind === 'grandpa') drawGrandpaIcon(ctx, it.x, it.y, it.r, pulse);
-      else if (it.kind === 'carrot') drawCarrotIcon(ctx, it.x, it.y, it.r, pulse);
-    }
-
-    // bunny (davanti al fuoco)
-    drawBunny(ctx, game.bunny.x, game.bunny.y, game.bunny.r, game.bunny.wiggle, game.tail);
-
-    // vite (stelline vicino al coniglio)
-    const lx = game.bunny.x - game.bunny.r * 1.2;
-    const ly = game.bunny.y + game.bunny.r * 1.35;
-    for (let i=0;i<game.lives;i++) drawStarIcon(ctx, lx + i*(18*DPR), ly, 9*DPR, 0);
-
-    // testo minimo (score piccolo e pulito)
+  // ===== render HUD
+  function hud(){
+    const W=canvas.width, H=canvas.height;
     ctx.save();
     ctx.fillStyle = 'rgba(255,255,255,0.85)';
     ctx.font = `${Math.floor(16*DPR)}px system-ui, -apple-system, Segoe UI, Roboto, Arial`;
-    ctx.textAlign = 'left';
-    ctx.textBaseline = 'top';
-    ctx.fillText(`Punti: ${game.score}`, 12*DPR, 10*DPR);
+    ctx.textAlign='left';
+    ctx.textBaseline='top';
+    ctx.fillText(`⭐ ${G.score}`, 12*DPR, 10*DPR);
+    ctx.fillText(`❤️ ${G.lives}`, 12*DPR, 30*DPR);
+
+    // mini barra “coda”
+    const bx = 12*DPR, by = 52*DPR, bw = 120*DPR, bh = 8*DPR;
+    ctx.globalAlpha = 0.22;
+    ctx.fillStyle = 'white';
+    ctx.beginPath(); ctx.roundRect(bx,by,bw,bh,10*DPR); ctx.fill();
+    ctx.globalAlpha = 0.85;
+    ctx.fillStyle = PAL.bunny2;
+    ctx.beginPath(); ctx.roundRect(bx,by,bw*(clamp(G.p.tail,0,100)/100),bh,10*DPR); ctx.fill();
     ctx.restore();
 
-    if (shook) ctx.restore();
-
-    if (game.state !== STATE.PLAY) {
+    if(G.state!=='play'){
       ctx.save();
-      ctx.fillStyle = 'rgba(255,255,255,0.85)';
-      ctx.font = `${Math.floor(18*DPR)}px system-ui, -apple-system, Segoe UI, Roboto, Arial`;
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.fillText('TOCCA PER GIOCARE', w/2, h*0.25);
+      ctx.fillStyle = 'rgba(255,255,255,0.88)';
+      ctx.font = `${Math.floor(22*DPR)}px system-ui, -apple-system, Segoe UI, Roboto, Arial`;
+      ctx.textAlign='center';
+      ctx.textBaseline='middle';
+      const msg = (G.state==='over') ? 'RIPROVA: TOCCA PER RIPARTIRE' : 'TOCCA PER INIZIARE (SALTO)';
+      ctx.fillText(msg, W/2, H*0.30);
       ctx.restore();
     }
   }
 
-  // =========================
-  // Loop
-  // =========================
-  function loop(now) {
-    const dt = Math.min(0.033, (now - game.last) / 1000);
-    game.last = now;
+  // ===== main loop
+  function frame(now){
+    const dt = Math.min(0.033, (now - G.last)/1000);
+    G.last = now;
 
-    if (game.state === STATE.PLAY) update(dt);
-    render();
+    // start/restart logic
+    if(G.state==='idle' || G.state==='over'){
+      // resta fermo finché non tocchi
+    } else {
+      update(dt);
+    }
 
-    requestAnimationFrame(loop);
+    // draw
+    bg();
+    ground();
+    // stars behind obstacles? più carino: stars sopra, obstacles davanti
+    for(const s of G.stars) drawStar(s);
+    for(const o of G.obs) drawBad(o);
+    drawBunny();
+    hud();
+
+    requestAnimationFrame(frame);
   }
+  requestAnimationFrame(frame);
 
-  // =========================
-  // Start
-  // =========================
-  resetToIdle();
-  requestAnimationFrame(loop);
+  // touch/click in idle/over: start
+  canvas.addEventListener('pointerdown', ()=>{
+    if(G.state==='idle' || G.state==='over'){
+      reset();
+      G.state='play';
+    }
+  });
 
 })();
 </script>
