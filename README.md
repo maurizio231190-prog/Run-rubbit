@@ -1,2 +1,2 @@
-# Cascata-POP
-Cascata Pop (Super Easy) è un mini-gioco a 3 corsie pensato per bambini: tocchi sinistra/centro/destra per spostarti e raccogliere 🍕 e ⭐. Le 💩 non fanno “game over”: azzerano solo la combo e partono effetti buffi. Include personaggi , livelli lenti e suoni con Sound Pack selezionabile e modalità “Solo risate” (niente scoregge)
+PigRun è un mini endless-runner super semplice e super divertente: un porcellino corre senza sosta mentre lo scenario scorre veloce, tu devi saltare al momento giusto e schivare i pericoli raccogliendo bonus lungo la strada. Grafica cartoon pulita, comandi touch immediati (tap/swipe) e partite rapide perfette per bambini: pochi secondi per capire, ma sempre voglia di “ancora una”.
+Obiettivo: fare più strada possibile, fare punti con i bonus e resistere finché riesci!
