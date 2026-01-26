@@ -3,9 +3,9 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no" />
-  <title>Porcellino Jump • MEME PANICORE</title>
+  <title>Porcellino HORROR • MEME PANICORE</title>
   <style>
-    html, body { margin:0; padding:0; height:100%; background:#fff; overflow:hidden; touch-action:manipulation; }
+    html, body { margin:0; padding:0; height:100%; background:#000; overflow:hidden; touch-action:manipulation; }
     canvas { display:block; width:100vw; height:100vh; }
   </style>
 </head>
@@ -14,6 +14,12 @@
 
 <script>
 (() => {
+  // ------------------------------------------------------------
+  // PORCELLINO + PIU' HORROR MEME PANICORE ASSURDO
+  // NO GORE: solo vibe spooky-cartoon + glitch + clown "BOO" meme.
+  // Struttura: runner con buchi (game over se cadi), items che scorrono.
+  // ------------------------------------------------------------
+
   // ---------- Canvas ----------
   const canvas = document.getElementById("c");
   const ctx = canvas.getContext("2d");
@@ -42,17 +48,17 @@
   addEventListener("resize", resize, { passive:true });
   resize();
 
-  // ---------- ASSETS (metti i file in /assets) ----------
+  // ---------- ASSETS (opzionali) ----------
   const ASSETS = {
-    bgSrc:    "assets/bg.jpg",     // sfondo principale
-    worldSrc: "assets/world.png",  // (NUOVO) overlay mondo "meme panicore" - opzionale
-    memeSrc:  "assets/meme.png",   // (NUOVO) logo/icone meme - opzionale
+    bgSrc:    "assets/bg_horror.jpg",     // opzionale
+    worldSrc: "assets/world_horror.png",  // opzionale
+    memeSrc:  "assets/meme_horror.png",   // opzionale
 
-    bongSrc:  "assets/bong.png",
-    cuffsSrc: "assets/cuffs.png",
+    bongSrc:  "assets/bong.png",          // bonus
+    cuffsSrc: "assets/cuffs.png",         // bonus
+    clownSrc: "assets/clown.png",         // penalità (boo)
   };
 
-  // ---------- Image Loader ----------
   function loadImage(src) {
     return new Promise((resolve) => {
       const img = new Image();
@@ -63,9 +69,8 @@
     });
   }
 
-  const IMAGES = { bg:null, world:null, meme:null, bong:null, cuffs:null };
+  const IMAGES = { bg:null, world:null, meme:null, bong:null, cuffs:null, clown:null };
 
-  // cover draw
   function drawImageCover(img, alpha=1) {
     const w = innerWidth, h = innerHeight;
     const iw = img.naturalWidth || img.width;
@@ -81,7 +86,7 @@
     ctx.restore();
   }
 
-  // ---------- Audio (mini) ----------
+  // ---------- Audio ----------
   let audioCtx = null;
   function beep(freq=440, dur=0.05, type="sine", gain=0.03) {
     try {
@@ -95,34 +100,48 @@
       o.stop(audioCtx.currentTime + dur);
     } catch(e) {}
   }
+  function booChord() {
+    // accordino "spooky" ma breve (no jump-scare forte)
+    beep(196, 0.08, "sine", 0.025);
+    setTimeout(()=>beep(233, 0.08, "triangle", 0.022), 40);
+    setTimeout(()=>beep(174, 0.10, "sawtooth", 0.018), 70);
+  }
 
   // ---------- World ----------
   const W = () => innerWidth;
   const H = () => innerHeight;
 
   const world = {
-    state: "ready", // ready | play | over
+    state: "ready",
     t: 0,
     score: 0,
     best: Number(localStorage.getItem("pig_best") || 0),
+
     speed: 320,
-    spawnMin: 0.85,
-    spawnMax: 1.55,
+    spawnMin: 0.78,
+    spawnMax: 1.35,
     nextSpawn: 1.0,
     groundY: () => Math.round(H()*0.78),
 
-    // buchi
     holes: [],
     nextHoleX: 0,
 
-    // (NUOVO) mondo meme panicore: particelle + doodle flottanti
+    // meme panicore layer
     sparks: [],
     doodles: [],
+    eyes: [],
     doodleTimer: 0,
     sparkTimer: 0,
+    eyeTimer: 0,
+
+    // horror fx
+    shake: 0,
+    glitch: 0,
+    invert: 0,
+    fog: 0,
   };
 
-  // ---------- Style helpers (doodle) ----------
+  // ---------- Style helpers ----------
   function doodleStroke() {
     ctx.lineWidth = Math.max(3, Math.round(Math.min(W(),H()) * 0.0045));
     ctx.lineCap = "round";
@@ -131,31 +150,7 @@
     ctx.fillStyle = "#fff";
   }
 
-  function drawHeart(x,y,s=10) {
-    doodleStroke();
-    ctx.save();
-    ctx.translate(x,y);
-    ctx.beginPath();
-    ctx.moveTo(0, -s*0.2);
-    ctx.bezierCurveTo(-s*0.6, -s*0.9, -s*1.2, -s*0.1, 0, s*0.7);
-    ctx.bezierCurveTo(s*1.2, -s*0.1, s*0.6, -s*0.9, 0, -s*0.2);
-    ctx.closePath();
-    ctx.fillStyle = "#fff";
-    ctx.fill();
-    ctx.stroke();
-    ctx.restore();
-  }
-
-  function face(x,y,r) {
-    doodleStroke();
-    ctx.beginPath(); ctx.arc(x - r*0.35, y - r*0.1, Math.max(1.5, r*0.08), 0, Math.PI*2); ctx.fillStyle="#000"; ctx.fill();
-    ctx.beginPath(); ctx.arc(x + r*0.35, y - r*0.1, Math.max(1.5, r*0.08), 0, Math.PI*2); ctx.fill();
-    ctx.beginPath();
-    ctx.strokeStyle="#000";
-    ctx.lineWidth = Math.max(2, ctx.lineWidth*0.65);
-    ctx.arc(x, y + r*0.12, r*0.28, 0.15*Math.PI, 0.85*Math.PI);
-    ctx.stroke();
-  }
+  function rand(a,b){ return a + Math.random()*(b-a); }
 
   // ---------- Pig ----------
   const pig = {
@@ -166,39 +161,47 @@
     onGround: true,
   };
 
-  function rand(a,b){ return a + Math.random()*(b-a); }
-
   function reset() {
     world.state = "ready";
     world.t = 0;
     world.score = 0;
     world.speed = 320;
     world.nextSpawn = rand(world.spawnMin, world.spawnMax);
+
     items.length = 0;
 
     world.holes.length = 0;
-    world.nextHoleX = W() + Math.max(260, W()*0.45);
+    world.nextHoleX = W() + Math.max(240, W()*0.42);
 
     pig.y = world.groundY() - pig.r();
     pig.vy = 0;
     pig.onGround = true;
 
-    // (NUOVO) reset mondo
     world.sparks.length = 0;
     world.doodles.length = 0;
-    world.doodleTimer = 0.25;
-    world.sparkTimer = 0.08;
+    world.eyes.length = 0;
+    world.doodleTimer = 0.22;
+    world.sparkTimer = 0.07;
+    world.eyeTimer = 0.45;
+
+    world.shake = 0;
+    world.glitch = 0;
+    world.invert = 0;
+    world.fog = 0.18;
   }
 
-  // ---------- Items (ORA SOLO BONUS) ----------
+  // ---------- Items ----------
   const items = [];
-  const TYPES = ["bong","cuffs"]; // entrambi BONUS da prendere
+  // bong/cuffs = bonus ; clown = "boo" penalità
+  const TYPES = ["bong","cuffs","clown"];
 
   function spawnItem() {
     const r = Math.round(Math.min(W(),H())*0.045);
-    const type = Math.random() < 0.55 ? "bong" : "cuffs";
 
-    // in alto (raggiungibile col salto)
+    // più horror: clown un po' più presente, ma non troppo
+    const p = Math.random();
+    const type = (p < 0.42) ? "bong" : (p < 0.78) ? "cuffs" : "clown";
+
     const gy = world.groundY();
     const yMin = gy - r*5.2;
     const yMax = gy - r*2.4;
@@ -213,16 +216,16 @@
     });
   }
 
-  // ---- Bubble + icon for bong/cuffs ----
-  function drawBubbleWithIcon(x, y, r, img, bubbleFill) {
+  // ---- Bubble + icon ----
+  function drawBubbleWithIcon(x, y, r, img, bubbleFill, fallbackDraw) {
     doodleStroke();
 
     // ombra
     ctx.save();
-    ctx.globalAlpha = 0.18;
+    ctx.globalAlpha = 0.22;
     ctx.fillStyle = "#000";
     ctx.beginPath();
-    ctx.arc(x + r*0.10, y + r*0.12, r*1.03, 0, Math.PI*2);
+    ctx.arc(x + r*0.12, y + r*0.14, r*1.05, 0, Math.PI*2);
     ctx.fill();
     ctx.restore();
 
@@ -244,7 +247,6 @@
     ctx.fill();
     ctx.restore();
 
-    // icon (contain)
     if (img) {
       const pad = r*0.35;
       const box = r*2 - pad;
@@ -254,22 +256,112 @@
       const dw = iw * s;
       const dh = ih * s;
       ctx.drawImage(img, x - dw/2, y - dh/2, dw, dh);
+    } else if (fallbackDraw) {
+      fallbackDraw(x,y,r);
     } else {
       ctx.fillStyle = "#000";
-      ctx.font = `900 ${Math.max(16, r*0.9)}px system-ui, -apple-system, sans-serif`;
+      ctx.font = `900 ${Math.max(16, r*0.85)}px ui-rounded, system-ui, -apple-system, sans-serif`;
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
-      ctx.fillText("★", x, y);
+      ctx.fillText("?", x, y);
       ctx.textAlign = "left";
       ctx.textBaseline = "alphabetic";
     }
   }
 
-  function drawItem(it) {
-    if (it.type === "bong") {
-      return drawBubbleWithIcon(it.x, it.y, it.r, IMAGES.bong, "rgba(170, 240, 210, 0.95)");
+  function drawBongFallback(x,y,r){
+    doodleStroke();
+    ctx.save(); ctx.translate(x,y);
+    ctx.fillStyle="#fff"; ctx.strokeStyle="#000";
+    ctx.lineWidth = Math.max(3, Math.round(Math.min(W(),H())*0.004));
+    // bottiglina assurda
+    ctx.beginPath();
+    ctx.roundRect(-r*0.35, -r*0.50, r*0.70, r*1.00, r*0.25);
+    ctx.fill(); ctx.stroke();
+    ctx.beginPath();
+    ctx.roundRect(-r*0.18, -r*0.78, r*0.36, r*0.32, r*0.18);
+    ctx.fill(); ctx.stroke();
+    // fumo meme
+    ctx.beginPath();
+    ctx.moveTo(r*0.20, -r*0.70);
+    ctx.bezierCurveTo(r*0.70, -r*0.95, r*0.65, -r*0.30, r*0.25, -r*0.35);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  function drawCuffsFallback(x,y,r){
+    doodleStroke();
+    ctx.save(); ctx.translate(x,y);
+    ctx.fillStyle="#fff"; ctx.strokeStyle="#000";
+    ctx.lineWidth = Math.max(3, Math.round(Math.min(W(),H())*0.004));
+    // manette cartoon
+    for (const sx of [-1,1]) {
+      ctx.beginPath();
+      ctx.arc(sx*r*0.28, 0, r*0.32, 0, Math.PI*2);
+      ctx.fill(); ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(sx*r*0.28, 0, r*0.18, 0, Math.PI*2);
+      ctx.stroke();
     }
-    return drawBubbleWithIcon(it.x, it.y, it.r, IMAGES.cuffs, "rgba(255, 190, 205, 0.95)");
+    ctx.beginPath();
+    ctx.moveTo(-r*0.05, 0);
+    ctx.lineTo(r*0.05, 0);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  function drawClownFallback(x,y,r){
+    doodleStroke();
+    ctx.save(); ctx.translate(x,y);
+    ctx.fillStyle="#fff"; ctx.strokeStyle="#000";
+    ctx.lineWidth = Math.max(3, Math.round(Math.min(W(),H())*0.004));
+
+    // faccia
+    ctx.beginPath();
+    ctx.arc(0, 0, r*0.62, 0, Math.PI*2);
+    ctx.fill(); ctx.stroke();
+
+    // occhi "boo" (cartoon)
+    ctx.fillStyle="#000";
+    ctx.beginPath(); ctx.arc(-r*0.20, -r*0.12, Math.max(2, r*0.08), 0, Math.PI*2); ctx.fill();
+    ctx.beginPath(); ctx.arc( r*0.20, -r*0.12, Math.max(2, r*0.08), 0, Math.PI*2); ctx.fill();
+
+    // naso
+    ctx.fillStyle="#fff";
+    ctx.beginPath(); ctx.arc(0, r*0.06, r*0.16, 0, Math.PI*2); ctx.fill(); ctx.stroke();
+
+    // sorriso "assurdo"
+    ctx.strokeStyle="#000";
+    ctx.lineWidth = Math.max(2, ctx.lineWidth*0.7);
+    ctx.beginPath();
+    ctx.arc(0, r*0.22, r*0.30, 0.12*Math.PI, 0.88*Math.PI);
+    ctx.stroke();
+
+    // capelli puff
+    ctx.fillStyle="#fff";
+    for (const sx of [-1,1]) {
+      ctx.beginPath();
+      ctx.arc(sx*r*0.75, -r*0.02, r*0.22, 0, Math.PI*2);
+      ctx.fill(); ctx.stroke();
+    }
+
+    // BOO tag
+    ctx.fillStyle="#fff";
+    ctx.strokeStyle="#000";
+    ctx.lineWidth = Math.max(3, Math.round(Math.min(W(),H())*0.004));
+    ctx.font = `900 ${Math.max(10, r*0.40)}px ui-rounded, system-ui`;
+    ctx.textAlign="center"; ctx.textBaseline="middle";
+    ctx.strokeText("BOO", 0, r*0.92);
+    ctx.fillText("BOO", 0, r*0.92);
+    ctx.textAlign="left"; ctx.textBaseline="alphabetic";
+
+    ctx.restore();
+  }
+
+  function drawItem(it) {
+    if (it.type === "bong")  return drawBubbleWithIcon(it.x, it.y, it.r, IMAGES.bong,  "rgba(120, 255, 210, 0.92)", drawBongFallback);
+    if (it.type === "cuffs") return drawBubbleWithIcon(it.x, it.y, it.r, IMAGES.cuffs, "rgba(255, 190, 205, 0.92)", drawCuffsFallback);
+    return drawBubbleWithIcon(it.x, it.y, it.r, IMAGES.clown, "rgba(210, 180, 255, 0.92)", drawClownFallback);
   }
 
   // ---------- Buchi ----------
@@ -280,12 +372,35 @@
     return true;
   }
 
+  // buchi: intervalli più pazzi (fasi + micro-burst)
   function spawnHole() {
     const base = Math.min(W(), H());
-    const wMin = Math.max(80, base*0.12);
-    const wMax = Math.max(120, base*0.18);
-    const spacingMin = Math.max(260, base*0.35);
-    const spacingMax = Math.max(520, base*0.55);
+
+    const wMin = Math.max(70, base*0.10);
+    const wMax = Math.max(170, base*0.25);
+
+    const phase = Math.floor(world.t / 5.2) % 4;
+    let spacingMin, spacingMax;
+
+    if (phase === 0) {             // denso
+      spacingMin = Math.max(160, base*0.18);
+      spacingMax = Math.max(340, base*0.38);
+    } else if (phase === 1) {      // respiro
+      spacingMin = Math.max(340, base*0.45);
+      spacingMax = Math.max(820, base*0.86);
+    } else if (phase === 2) {      // normale
+      spacingMin = Math.max(240, base*0.30);
+      spacingMax = Math.max(600, base*0.62);
+    } else {                        // caos
+      spacingMin = Math.max(130, base*0.16);
+      spacingMax = Math.max(520, base*0.58);
+    }
+
+    // burst: a volte due buchi quasi attaccati (assurdo)
+    if (Math.random() < 0.22) {
+      spacingMin = Math.max(110, spacingMin * 0.55);
+      spacingMax = Math.max(220, spacingMax * 0.65);
+    }
 
     const w = rand(wMin, wMax);
     const x = W() + 10;
@@ -295,7 +410,6 @@
   }
 
   function updateHoles(dt) {
-    // spawn schedule in screen-coords (scorre con la velocità)
     if (world.nextHoleX <= W()) spawnHole();
     else world.nextHoleX -= world.speed * dt;
 
@@ -305,50 +419,67 @@
     }
   }
 
-  // ---------- (NUOVO) MONDO MEME PANICORE: particelle & doodle ----------
+  // ---------- MEME PANICORE HORROR LAYERS ----------
   function spawnSpark() {
     const gy = world.groundY();
-    const y = rand(gy - H()*0.55, gy - H()*0.12);
+    const y = rand(gy - H()*0.62, gy - H()*0.10);
     world.sparks.push({
       x: W() + 20,
       y,
-      vx: -world.speed * rand(0.8, 1.25),
-      vy: rand(-10, 10),
-      s: rand(2, 6),
-      a: rand(0.18, 0.35),
-      life: rand(0.6, 1.1),
+      vx: -world.speed * rand(0.85, 1.35),
+      vy: rand(-14, 14),
+      s: rand(2, 7),
+      a: rand(0.14, 0.32),
+      life: rand(0.55, 1.05),
     });
   }
 
   function spawnDoodle() {
-    const kinds = ["!", "?", "♥", "★"];
+    const kinds = ["NOPE", "BOO!", "???", "RUN", "AHA", "LOL", "SUS", "CIRCO", "PANIC"];
     const k = kinds[(Math.random()*kinds.length)|0];
     world.doodles.push({
       k,
-      x: W() + rand(0, 120),
-      y: rand(H()*0.10, H()*0.45),
-      vx: -world.speed * rand(0.10, 0.20),
-      rot: rand(-0.3, 0.3),
-      vr: rand(-0.25, 0.25),
-      s: rand(18, 34),
-      a: rand(0.14, 0.22),
+      x: W() + rand(0, 160),
+      y: rand(H()*0.08, H()*0.52),
+      vx: -world.speed * rand(0.10, 0.26),
+      rot: rand(-0.40, 0.40),
+      vr: rand(-0.45, 0.45),
+      s: rand(18, 36),
+      a: rand(0.10, 0.24),
+    });
+  }
+
+  function spawnEye() {
+    const gy = world.groundY();
+    world.eyes.push({
+      x: W() + rand(0, 220),
+      y: rand(H()*0.10, gy - H()*0.22),
+      vx: -world.speed * rand(0.04, 0.10),
+      r: rand(6, 14),
+      blink: rand(0.3, 1.2),
+      a: rand(0.10, 0.22),
     });
   }
 
   function updateMemeWorld(dt) {
-    // sempre leggero, più “panicore” quando vai veloce
     const panic = Math.max(0, Math.min(1, (world.speed - 340) / 200));
 
-    world.sparkTimer -= dt * (1 + panic*1.8);
+    world.sparkTimer -= dt * (1 + panic*2.0);
     if (world.sparkTimer <= 0) {
       spawnSpark();
-      world.sparkTimer = rand(0.05, 0.11);
+      world.sparkTimer = rand(0.045, 0.10);
     }
 
-    world.doodleTimer -= dt * (1 + panic*1.2);
+    world.doodleTimer -= dt * (1 + panic*1.4);
     if (world.doodleTimer <= 0) {
       spawnDoodle();
-      world.doodleTimer = rand(0.45, 0.9);
+      world.doodleTimer = rand(0.35, 0.85);
+    }
+
+    world.eyeTimer -= dt * (1 + panic*0.6);
+    if (world.eyeTimer <= 0) {
+      spawnEye();
+      world.eyeTimer = rand(0.35, 0.85);
     }
 
     for (const p of world.sparks) {
@@ -357,7 +488,7 @@
       p.life -= dt;
     }
     for (let i=world.sparks.length-1; i>=0; i--) {
-      if (world.sparks[i].x < -50 || world.sparks[i].life <= 0) world.sparks.splice(i,1);
+      if (world.sparks[i].x < -60 || world.sparks[i].life <= 0) world.sparks.splice(i,1);
     }
 
     for (const d of world.doodles) {
@@ -365,31 +496,49 @@
       d.rot += d.vr * dt;
     }
     for (let i=world.doodles.length-1; i>=0; i--) {
-      if (world.doodles[i].x < -80) world.doodles.splice(i,1);
+      if (world.doodles[i].x < -120) world.doodles.splice(i,1);
+    }
+
+    for (const e of world.eyes) {
+      e.x += e.vx * dt;
+      e.blink -= dt;
+      if (e.blink <= 0) e.blink = rand(0.6, 1.6);
+    }
+    for (let i=world.eyes.length-1; i>=0; i--) {
+      if (world.eyes[i].x < -120) world.eyes.splice(i,1);
     }
   }
 
   function drawMemeWorldLayers() {
-    // overlay "world" (immagine opzionale)
-    if (IMAGES.world) {
-      // leggero, sopra lo sfondo
-      drawImageCover(IMAGES.world, 0.28);
-    }
+    // overlay world
+    if (IMAGES.world) drawImageCover(IMAGES.world, 0.22);
 
-    // vibe panicore: vignette + glow
     const panic = Math.max(0, Math.min(1, (world.speed - 340) / 200));
+    const glitch = Math.max(0, Math.min(1, world.glitch / 0.22));
+
+    // vignette horror
     ctx.save();
-    // glow rosa/rosso soft
-    ctx.globalAlpha = 0.22 + panic*0.18;
-    const g = ctx.createRadialGradient(W()*0.25, H()*0.35, 10, W()*0.25, H()*0.35, Math.max(W(),H())*0.9);
-    g.addColorStop(0, "rgba(255, 140, 190, 0.55)");
-    g.addColorStop(0.6, "rgba(255, 80, 120, 0.10)");
+    ctx.globalAlpha = 0.55 + panic*0.25;
+    const v = ctx.createRadialGradient(W()*0.35, H()*0.35, 10, W()*0.35, H()*0.35, Math.max(W(),H())*0.95);
+    v.addColorStop(0, "rgba(0,0,0,0)");
+    v.addColorStop(0.6, "rgba(0,0,0,0.18)");
+    v.addColorStop(1, "rgba(0,0,0,0.62)");
+    ctx.fillStyle = v;
+    ctx.fillRect(0,0,W(),H());
+    ctx.restore();
+
+    // glow viola/rosa "panicore"
+    ctx.save();
+    ctx.globalAlpha = (0.18 + panic*0.22) * (1 - glitch*0.4);
+    const g = ctx.createRadialGradient(W()*0.22, H()*0.35, 10, W()*0.22, H()*0.35, Math.max(W(),H())*0.95);
+    g.addColorStop(0, "rgba(190, 120, 255, 0.55)");
+    g.addColorStop(0.5, "rgba(255, 80, 120, 0.14)");
     g.addColorStop(1, "rgba(0,0,0,0)");
     ctx.fillStyle = g;
     ctx.fillRect(0,0,W(),H());
     ctx.restore();
 
-    // particelle
+    // sparks
     ctx.save();
     for (const p of world.sparks) {
       ctx.globalAlpha = p.a * Math.max(0, Math.min(1, p.life));
@@ -400,16 +549,33 @@
       ctx.arc(p.x, p.y, p.s, 0, Math.PI*2);
       ctx.fill();
       ctx.stroke();
-      // micro scia
-      ctx.globalAlpha *= 0.6;
+      ctx.globalAlpha *= 0.55;
       ctx.beginPath();
       ctx.moveTo(p.x, p.y);
-      ctx.lineTo(p.x + p.s*2.2, p.y + p.s*0.2);
+      ctx.lineTo(p.x + p.s*2.4, p.y + p.s*0.15);
       ctx.stroke();
     }
     ctx.restore();
 
-    // doodle fluttuanti
+    // eyes in darkness (cartoon)
+    ctx.save();
+    for (const e of world.eyes) {
+      const closed = (e.blink < 0.10);
+      ctx.globalAlpha = e.a;
+      ctx.fillStyle = "#fff";
+      ctx.strokeStyle = "#000";
+      ctx.lineWidth = Math.max(2, Math.round(Math.min(W(),H())*0.0025));
+      if (!closed) {
+        ctx.beginPath(); ctx.ellipse(e.x, e.y, e.r*1.25, e.r*0.85, 0, 0, Math.PI*2); ctx.fill(); ctx.stroke();
+        ctx.fillStyle = "#000";
+        ctx.beginPath(); ctx.arc(e.x + Math.sin(world.t*3 + e.y)*e.r*0.20, e.y, Math.max(2, e.r*0.28), 0, Math.PI*2); ctx.fill();
+      } else {
+        ctx.beginPath(); ctx.moveTo(e.x - e.r*1.2, e.y); ctx.lineTo(e.x + e.r*1.2, e.y); ctx.stroke();
+      }
+    }
+    ctx.restore();
+
+    // doodle texts
     ctx.save();
     doodleStroke();
     for (const d of world.doodles) {
@@ -427,7 +593,7 @@
     }
     ctx.restore();
 
-    // logo meme opzionale in alto a destra
+    // logo meme
     if (IMAGES.meme) {
       const s = Math.max(36, Math.round(Math.min(W(),H())*0.07));
       const pad = 14;
@@ -463,7 +629,23 @@
     }
     ctx.stroke();
 
-    // erba solo su terreno (non dentro i buchi)
+    // “dentini” sul bordo buco (assurdo horror cartoon)
+    ctx.save();
+    ctx.globalAlpha = 0.45;
+    ctx.lineWidth = Math.max(2, ctx.lineWidth*0.55);
+    for (const h of holes) {
+      const left = Math.max(0, Math.min(W(), h.x));
+      const right = Math.max(0, Math.min(W(), h.x + h.w));
+      for (let x = left; x <= right; x += 18) {
+        ctx.beginPath();
+        ctx.moveTo(x, gy);
+        ctx.lineTo(x+6, gy+10);
+        ctx.stroke();
+      }
+    }
+    ctx.restore();
+
+    // erbetta solo su terreno
     ctx.lineWidth *= 0.7;
     const step = Math.max(24, Math.floor(W()/30));
     for (let x=0; x<=W(); x+=step) {
@@ -475,78 +657,92 @@
     }
   }
 
-  function drawBackground() {
-    ctx.clearRect(0,0,W(),H());
-
+  function drawBackgroundBase() {
     // sfondo immagine (se presente)
     if (IMAGES.bg) {
       drawImageCover(IMAGES.bg, 1);
-    } else {
-      // fallback: gradientino carino
-      const g = ctx.createLinearGradient(0,0,0,H());
-      g.addColorStop(0, "#fff");
-      g.addColorStop(1, "rgba(255, 210, 221, 0.6)");
-      ctx.fillStyle = g;
-      ctx.fillRect(0,0,W(),H());
+      return;
     }
 
-    // (NUOVO) mondo meme panicore sopra lo sfondo
+    // fallback: circo horror meme (no gore)
+    const g = ctx.createLinearGradient(0,0,0,H());
+    g.addColorStop(0, "rgba(20, 12, 35, 1)");
+    g.addColorStop(0.55, "rgba(70, 18, 60, 1)");
+    g.addColorStop(1, "rgba(10, 10, 18, 1)");
+    ctx.fillStyle = g;
+    ctx.fillRect(0,0,W(),H());
+
+    // tende/strisce
+    ctx.save();
+    ctx.globalAlpha = 0.14;
+    for (let x=0; x<W(); x+=44) {
+      ctx.fillStyle = (Math.floor(x/44)%2===0) ? "#000" : "#fff";
+      ctx.fillRect(x, 0, 22, H());
+    }
+    ctx.restore();
+
+    // nebbia
+    ctx.save();
+    const fogA = 0.16 + Math.max(0, Math.min(1, world.fog)) * 0.22;
+    ctx.globalAlpha = fogA;
+    const fg = ctx.createRadialGradient(W()*0.45, H()*0.35, 10, W()*0.45, H()*0.35, Math.max(W(),H())*0.95);
+    fg.addColorStop(0, "rgba(255,255,255,0.35)");
+    fg.addColorStop(0.5, "rgba(255,255,255,0.10)");
+    fg.addColorStop(1, "rgba(255,255,255,0)");
+    ctx.fillStyle = fg;
+    ctx.fillRect(0,0,W(),H());
+    ctx.restore();
+  }
+
+  function drawBackground() {
+    ctx.clearRect(0,0,W(),H());
+    drawBackgroundBase();
+
+    // layer horror/meme
     drawMemeWorldLayers();
-
-    // nuvolette sopra lo sfondo (come prima)
-    doodleStroke();
-    const topY = Math.round(H()*0.12);
-    for (let i=0;i<6;i++){
-      const x = (i/6)*W() + (Math.sin(world.t*0.6+i)*18);
-      const y = topY + (Math.cos(world.t*0.5+i)*10);
-      const s = 18 + (i%3)*6;
-      ctx.beginPath();
-      ctx.arc(x, y, s, 0, Math.PI*2);
-      ctx.fillStyle="rgba(255,255,255,0.75)";
-      ctx.fill();
-      ctx.strokeStyle="#000";
-      ctx.stroke();
-      if (i%2===0) drawHeart(x+s*1.2, y-s*0.6, 8);
-    }
 
     // terreno con buchi
     drawGroundWithHoles();
 
-    // (NUOVO) etichetta mondo (micro)
+    // etichetta
     doodleStroke();
     const pad = 14;
     ctx.save();
-    ctx.globalAlpha = 0.9;
+    ctx.globalAlpha = 0.92;
     ctx.font = `900 ${Math.max(14, Math.round(Math.min(W(),H())*0.022))}px ui-rounded, system-ui, -apple-system, sans-serif`;
     ctx.fillStyle = "#fff";
     ctx.strokeStyle = "#000";
     ctx.lineWidth = Math.max(3, Math.round(Math.min(W(),H())*0.004));
-    const txt = "MEME PANICORE";
+    const txt = "HORROR MEME PANICORE • PORCELLINO";
+    ctx.textAlign = "right";
     ctx.strokeText(txt, W()-pad, H()-pad);
     ctx.fillText(txt, W()-pad, H()-pad);
+    ctx.textAlign = "left";
     ctx.restore();
   }
 
+  // ---------- Pig render ----------
   function drawPig() {
     doodleStroke();
     const r = pig.r();
     const x = pig.x();
     const y = pig.y;
 
-    // (NUOVO) aura panicore leggerissima dietro al porcellino (solo grafica)
     const panic = Math.max(0, Math.min(1, (world.speed - 340) / 200));
-    if (panic > 0.02) {
-      ctx.save();
-      ctx.globalAlpha = 0.12 + panic*0.16;
-      const g = ctx.createRadialGradient(x, y, r*0.2, x, y, r*2.2);
-      g.addColorStop(0, "rgba(255, 160, 200, 0.8)");
-      g.addColorStop(1, "rgba(255, 0, 90, 0)");
-      ctx.fillStyle = g;
-      ctx.beginPath();
-      ctx.arc(x, y, r*2.2, 0, Math.PI*2);
-      ctx.fill();
-      ctx.restore();
-    }
+    const glitch = Math.max(0, Math.min(1, world.glitch / 0.22));
+
+    // aura più cattiva quando glitch
+    ctx.save();
+    ctx.globalAlpha = 0.12 + panic*0.16 + glitch*0.20;
+    const ag = ctx.createRadialGradient(x, y, r*0.2, x, y, r*2.4);
+    ag.addColorStop(0, "rgba(255, 100, 170, 0.9)");
+    ag.addColorStop(0.6, "rgba(190, 120, 255, 0.25)");
+    ag.addColorStop(1, "rgba(0,0,0,0)");
+    ctx.fillStyle = ag;
+    ctx.beginPath();
+    ctx.arc(x, y, r*2.4, 0, Math.PI*2);
+    ctx.fill();
+    ctx.restore();
 
     // corpo
     ctx.beginPath();
@@ -574,14 +770,33 @@
     ctx.beginPath(); ctx.arc(x - r*0.18, y + r*0.12, Math.max(2, r*0.07), 0, Math.PI*2); ctx.fill();
     ctx.beginPath(); ctx.arc(x + r*0.18, y + r*0.12, Math.max(2, r*0.07), 0, Math.PI*2); ctx.fill();
 
-    // occhi+bocca
-    ctx.beginPath(); ctx.arc(x - r*0.3, y - r*0.25, Math.max(2, r*0.07), 0, Math.PI*2); ctx.fill();
-    ctx.beginPath(); ctx.arc(x + r*0.3, y - r*0.25, Math.max(2, r*0.07), 0, Math.PI*2); ctx.fill();
+    // occhi + bocca (più "spaventato" in glitch)
+    const eyeJ = glitch*2.2;
+    ctx.beginPath(); ctx.arc(x - r*0.3, y - r*0.25, Math.max(2, r*0.07 + glitch*1.2), 0, Math.PI*2); ctx.fill();
+    ctx.beginPath(); ctx.arc(x + r*0.3, y - r*0.25, Math.max(2, r*0.07 + glitch*1.2), 0, Math.PI*2); ctx.fill();
+
     ctx.strokeStyle="#000";
     ctx.lineWidth = Math.max(2, ctx.lineWidth*0.6);
     ctx.beginPath();
-    ctx.arc(x, y - r*0.05, r*0.22, 0.1*Math.PI, 0.9*Math.PI);
+    const smileR = r*(0.22 + glitch*0.06);
+    ctx.arc(x + Math.sin(world.t*18)*eyeJ, y - r*0.05, smileR, 0.1*Math.PI, 0.9*Math.PI);
     ctx.stroke();
+
+    // dentino meme (solo grafico, cartoon)
+    if (glitch > 0.05) {
+      ctx.save();
+      ctx.globalAlpha = 0.75*glitch;
+      ctx.fillStyle="#fff";
+      ctx.strokeStyle="#000";
+      ctx.lineWidth = Math.max(2, ctx.lineWidth*0.6);
+      ctx.beginPath();
+      ctx.moveTo(x - r*0.05, y + r*0.10);
+      ctx.lineTo(x + r*0.02, y + r*0.18);
+      ctx.lineTo(x + r*0.08, y + r*0.10);
+      ctx.closePath();
+      ctx.fill(); ctx.stroke();
+      ctx.restore();
+    }
   }
 
   // ---------- Collision ----------
@@ -622,9 +837,15 @@
   function update(dt) {
     world.t += dt;
 
+    // decay fx
+    world.shake = Math.max(0, world.shake - dt);
+    world.glitch = Math.max(0, world.glitch - dt);
+    world.invert = Math.max(0, world.invert - dt);
+    world.fog = 0.18 + Math.sin(world.t*0.6)*0.05;
+
     const gy = world.groundY();
 
-    // (NUOVO) mondo meme panicore: update visual layer
+    // update meme world
     updateMemeWorld(dt);
 
     // pig physics
@@ -636,20 +857,18 @@
     const targetY = gy - pig.r();
     const hasGround = groundUnderX(px);
 
-    // se eri “a terra” ma sotto c'è buco: inizia a cadere
     if (pig.onGround && !hasGround) {
       pig.onGround = false;
       pig.vy = Math.max(0, pig.vy);
     }
 
-    // atterra solo se c'è terreno sotto
     if (pig.y >= targetY && hasGround) {
       pig.y = targetY;
       pig.vy = 0;
       pig.onGround = true;
     }
 
-    // se cadi fuori schermo => game over (solo con buchi)
+    // caduta => game over
     if (!pig.onGround && pig.y - pig.r() > H() + 30) {
       world.state = "over";
       beep(120, 0.12, "sawtooth", 0.05);
@@ -660,20 +879,20 @@
 
     if (world.state !== "play") return;
 
-    // difficulty (tutto uguale)
-    world.speed = Math.min(520, world.speed + 6*dt);
+    // difficulty
+    world.speed = Math.min(560, world.speed + 8*dt);
 
     // buchi
     updateHoles(dt);
 
-    // spawn bonus
+    // spawn items
     world.nextSpawn -= dt;
     if (world.nextSpawn <= 0) {
       spawnItem();
       world.nextSpawn = rand(world.spawnMin, world.spawnMax);
     }
 
-    // items move + collision (ORA SOLO BONUS)
+    // items move + collision
     for (const it of items) {
       it.vx = -world.speed;
       it.x += it.vx * dt;
@@ -682,9 +901,21 @@
         const pigPos = { x: pig.x(), y: pig.y, r: pig.r()*0.9 };
         if (hit(pigPos, it.x, it.y, it.r*0.95)) {
           it.hit = true;
-          // bonus punti (cuffs e bong sono entrambi bonus)
-          world.score += (it.type === "bong") ? 2 : 1;
-          beep(it.type === "bong" ? 740 : 660, 0.06, "triangle", 0.03);
+
+          if (it.type === "bong") {
+            world.score += 2;
+            beep(740, 0.06, "triangle", 0.03);
+          } else if (it.type === "cuffs") {
+            world.score += 1;
+            beep(660, 0.05, "triangle", 0.028);
+          } else {
+            // CLOWN BOO: penalità + glitch assurdo
+            world.score = Math.max(0, world.score - 2);
+            booChord();
+            world.shake = 0.22;
+            world.glitch = 0.22;
+            world.invert = 0.12;
+          }
         }
       }
     }
@@ -721,22 +952,62 @@
     ctx.fillText(scoreTxt, pad, pad + 22);
 
     if (world.state === "ready") {
-      centerText("TOCCA PER SALTARE", H()*0.45, 1.15);
-      centerText("prendi i bonus in alto • evita i buchi", H()*0.45 + 34, 0.75);
-      centerText("MONDO: MEME PANICORE", H()*0.45 + 62, 0.68);
+      centerText("TOCCA PER SALTARE", H()*0.44, 1.15);
+      centerText("prendi bong/manette • evita i clown BOO", H()*0.44 + 34, 0.76);
+      centerText("evita i buchi o cadi nel VUOTO ASSURDO", H()*0.44 + 62, 0.68);
     }
     if (world.state === "over") {
-      centerText("CADUTO!", H()*0.43, 1.2);
+      centerText("CADUTO NEL BUCO!", H()*0.43, 1.2);
       centerText(`punteggio: ${Math.floor(world.score)}  |  best: ${world.best}`, H()*0.43 + 34, 0.8);
       centerText("tocca per ricominciare", H()*0.43 + 64, 0.75);
     }
   }
 
   function render() {
+    // camera shake
+    let dx=0, dy=0;
+    if (world.shake > 0) {
+      const k = world.shake / 0.22;
+      dx = rand(-12, 12) * k;
+      dy = rand(-8, 8) * k;
+    }
+
+    // glitch slices (semplice)
+    const glitch = Math.max(0, Math.min(1, world.glitch / 0.22));
+    const invert = Math.max(0, Math.min(1, world.invert / 0.12));
+
+    ctx.save();
+    ctx.translate(dx, dy);
+
     drawBackground();
     for (const it of items) drawItem(it);
     drawPig();
     drawOverlayText();
+
+    // invert flash (assurdo)
+    if (invert > 0.01) {
+      ctx.save();
+      ctx.globalAlpha = 0.28 * invert;
+      ctx.globalCompositeOperation = "difference";
+      ctx.fillStyle = "#fff";
+      ctx.fillRect(-dx, -dy, W(), H());
+      ctx.restore();
+    }
+
+    // glitch stripes overlay
+    if (glitch > 0.01) {
+      ctx.save();
+      ctx.globalAlpha = 0.20 * glitch;
+      ctx.fillStyle = "#fff";
+      for (let i=0;i<10;i++){
+        const y = rand(0, H());
+        const h = rand(6, 18);
+        ctx.fillRect(-dx, y, W(), h);
+      }
+      ctx.restore();
+    }
+
+    ctx.restore();
   }
 
   function loop(now) {
@@ -750,11 +1021,12 @@
   // ---------- Boot: carica immagini ----------
   (async () => {
     IMAGES.bg = await loadImage(ASSETS.bgSrc);
-    IMAGES.world = await loadImage(ASSETS.worldSrc); // (NUOVO)
-    IMAGES.meme = await loadImage(ASSETS.memeSrc);   // (NUOVO)
+    IMAGES.world = await loadImage(ASSETS.worldSrc);
+    IMAGES.meme = await loadImage(ASSETS.memeSrc);
 
     IMAGES.bong = await loadImage(ASSETS.bongSrc);
     IMAGES.cuffs = await loadImage(ASSETS.cuffsSrc);
+    IMAGES.clown = await loadImage(ASSETS.clownSrc);
 
     reset();
     requestAnimationFrame(loop);
